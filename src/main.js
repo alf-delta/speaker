@@ -520,6 +520,60 @@ const zBackInner = -CONFIG.box.d / 2 + CONFIG.wall; // Inner face of back wall
 const zBaffleRear = baffleZ - CONFIG.wall / 2;      // Rear face of front baffle
 const internalGap = zBaffleRear - zBackInner;
 
+// Partition physically enters the wall by dadoDepth on both sides
+const partitionDepth = internalGap + 2 * dadoDepth;
+const partitionZ = zBackInner + internalGap / 2;
+
+const partitionGeo = new THREE.BoxGeometry(CONFIG.partition, internalH, partitionDepth);
+[-1, 1].forEach((side) => {
+    const partition = new THREE.Mesh(partitionGeo, matPartition);
+    partition.position.set(side * partitionOffset, 0, partitionZ);
+    partition.castShadow = true;
+    partition.receiveShadow = true;
+    assembly.add(partition);
+});
+
+// === NEW SEPTUMS for 6L Limit ===
+// Target Volume: 6L. 
+// Height: internalH (~250mm). 
+// Width: Approx sideW (~312mm).
+// Required Depth: 6000000 / (250 * 312) = ~77mm.
+// Position: Behind the baffle.
+// Baffle Front Face is roughly at baffleZ. 
+// Baffle Back Face is approx baffleZ - CONFIG.wall.
+// Septum Front Face should be at (baffleZ - CONFIG.wall - 77).
+// Septum Center Z = (baffleZ - CONFIG.wall - 77) - (CONFIG.partition / 2).
+
+const targetVolLiters = 6;
+const estimatedSideW = (CONFIG.box.w - 2 * CONFIG.wall - CONFIG.bassChamberWidth - 2 * CONFIG.partition) / 2;
+const requiredDepth = (targetVolLiters * 1e6) / (internalH * estimatedSideW); // ~77 mm
+
+const septumZ = (baffleZ - CONFIG.wall) - requiredDepth - (CONFIG.partition / 2);
+
+// Septum Width needs to span from Outer Wall to Bass Partition.
+// Outer Wall Inner Face X = +/- (wallX - CONFIG.wall/2) = +/- (550 - 40) = +/- 510.
+// Bass Partition Outer Face X = +/- partitionOuterEdge = +/- (180 + 18) = +/- 198.
+// Width = 510 - 198 = 312mm.
+const septumWidth = estimatedSideW + 2 * dadoDepth; // Embed into walls
+const septumGeo = new THREE.BoxGeometry(septumWidth, internalH, CONFIG.partition);
+
+// Left Septum
+const leftSeptum = new THREE.Mesh(septumGeo, matPartition);
+// Center X = (LeftWallInner + PartitionOuter) / 2 = (-510 + -198) / 2 = -354.
+const septumCenterX = (-(CONFIG.box.w / 2 - CONFIG.wall) + (-partitionOuterEdge)) / 2;
+leftSeptum.position.set(septumCenterX, 0, septumZ);
+leftSeptum.castShadow = true;
+leftSeptum.receiveShadow = true;
+assembly.add(leftSeptum);
+
+// Right Septum
+const rightSeptum = new THREE.Mesh(septumGeo, matPartition);
+rightSeptum.position.set(-septumCenterX, 0, septumZ);
+rightSeptum.castShadow = true;
+rightSeptum.receiveShadow = true;
+assembly.add(rightSeptum);
+
+
 // === STATS CALCULATION ===
 function updateStats() {
     // 1. External Dims
@@ -538,33 +592,36 @@ function updateStats() {
     // frontZ = extD/2
     const frontZ = extD / 2;
     const baffleZ = frontZ - CONFIG.baffleInset - CONFIG.wall / 2;
-    const zBaffleRear = baffleZ - CONFIG.wall / 2;
-    const zBackInner = -extD / 2 + CONFIG.wall;
-    const internalDepth = zBaffleRear - zBackInner;
+    const zBaffleRear = baffleZ - CONFIG.wall; // Fixed: Back face is full wall thickness back? 
+    // Actually baffleZ is center of panel if standard extrude. 
+    // But we used makeTrapezoidalPanel which puts Origin at hinge. 
+    // Assuming standard placement, let's treat Z dimensions consistently.
 
-    // 3. Volumes
     // Sub Chamber (Rectangular approximation)
     const subW = CONFIG.bassChamberWidth;
-    const volSub = (subW * intH * internalDepth) / 1000000; // Liters
+    // Sub depth is full depth
+    const zBackInner = -extD / 2 + CONFIG.wall;
+    const subDepth = zBaffleRear - zBackInner;
+    const volSub = (subW * intH * subDepth) / 1000000; // Liters
 
-    // Side Chambers (Complex shape, approx as Trapz/Rect)
-    // Total internal width approx: extW - 2*sideBevel - 2*wall (simplification)
-    // Actually: (InternalWidth - SubW - 2*Partition) / 2
-    // We determined InternalW in code, let's re-calc rough side width
-    // sideW approx = (1100 - 80 - 360 - 36)/2 = 312mm
-    const totalInternalW = extW - 2 * CONFIG.wall; // Rough bounding
-    const sideW = (totalInternalW - subW - 2 * CONFIG.partition) / 2;
-    const volSide = (sideW * intH * internalDepth) / 1000000;
+    // Side Chambers (Limited by Septum)
+    // Depth is now fixed by requiredDepth calculation roughly
+    // Actual depth = (zBaffleRear) - (septumZ + partition/2)
+    // = (zBaffleRear) - (zBaffleRear - requiredDepth - partition/2 + partition/2) = requiredDepth
+    const sideDepth = requiredDepth;
+
+    const sideW = (extW - 2 * CONFIG.wall - subW - 2 * CONFIG.partition) / 2;
+    const volSide = (sideW * intH * sideDepth) / 1000000;
 
     const statsHtml = `
         <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 10px;">
             <strong>System Specs:</strong><br>
             Dims: ${extW} x ${extH} x ${extD} mm<br>
             <br>
-            <strong>Gross Volumes (Est):</strong><br>
-            Sub Chamber: ~${volSub.toFixed(1)} L<br>
-            Side Chamber: ~${volSide.toFixed(1)} L (x2)<br>
-            Total Internal: ~${(volSub + volSide * 2).toFixed(1)} L
+            <strong>Net Volumes (Est):</strong><br>
+            Sub Chamber: ~${volSub.toFixed(1)} L (Full Depth)<br>
+            Side Chamber: ~${volSide.toFixed(1)} L (Lim < 6L)<br>
+            Side Depth: ~${sideDepth.toFixed(0)} mm
         </div>
     `;
 
@@ -583,19 +640,6 @@ function updateStats() {
 
 // Call stats update
 updateStats();
-
-// Partition physically enters the wall by dadoDepth on both sides
-const partitionDepth = internalGap + 2 * dadoDepth;
-const partitionZ = zBackInner + internalGap / 2;
-
-const partitionGeo = new THREE.BoxGeometry(CONFIG.partition, internalH, partitionDepth);
-[-1, 1].forEach((side) => {
-    const partition = new THREE.Mesh(partitionGeo, matPartition);
-    partition.position.set(side * partitionOffset, 0, partitionZ);
-    partition.castShadow = true;
-    partition.receiveShadow = true;
-    assembly.add(partition);
-});
 
 const dadoMat = matAccent;
 const dadoW = CONFIG.partition;

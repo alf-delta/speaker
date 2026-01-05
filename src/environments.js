@@ -79,6 +79,16 @@ export class EnvironmentManager {
 
     clearEnv() {
         if (this.currentEnvGroup) {
+            // Explicitly cleanup CSS2DObjects to remove their DOM elements
+            this.currentEnvGroup.traverse((child) => {
+                if (child.isCSS2DObject) {
+                    // CSS2DRenderer appends the element to the labelRenderer's domElement (or a container).
+                    // We need to remove it manually if standard removal fails.
+                    if (child.element && child.element.parentNode) {
+                        child.element.parentNode.removeChild(child.element);
+                    }
+                }
+            });
             this.scene.remove(this.currentEnvGroup);
             this.currentEnvGroup = null;
         }
