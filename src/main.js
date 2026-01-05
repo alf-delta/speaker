@@ -1,0 +1,761 @@
+import './style.css';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { CONFIG, DRV, PAD } from './config.js';
+import { createMaterials } from './materials.js';
+
+const frontZ = CONFIG.box.d / 2;
+const listenerPos = new THREE.Vector3(
+    CONFIG.listener.x,
+    CONFIG.listener.y,
+    frontZ + CONFIG.listenerDist
+);
+
+function yawToListener(x, z = frontZ) {
+    const dx = listenerPos.x - x;
+    const dz = listenerPos.z - z;
+    return THREE.MathUtils.radToDeg(Math.atan2(dx, dz));
+}
+
+function distanceToListener(x, z = frontZ) {
+    const dx = listenerPos.x - x;
+    const dz = listenerPos.z - z;
+    return Math.hypot(dx, dz);
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function computeLayout() {
+    const halfW = CONFIG.box.w / 2;
+    const halfH = CONFIG.box.h / 2;
+    const edge = CONFIG.edgeClearance;
+    const partitionOuter = CONFIG.bassChamberWidth / 2 + CONFIG.partition;
+
+    const midPadHalfW = PAD.mid.w / 2;
+    const midPadHalfH = PAD.mid.h / 2;
+    const tweetPadHalfW = PAD.tweeter.w / 2;
+    const tweetPadHalfH = PAD.tweeter.h / 2;
+
+    const midRange = {
+        min: -halfW + edge + midPadHalfW,
+        max: -partitionOuter - midPadHalfW
+    };
+
+    const midX = clamp(midRange.max, midRange.min, midRange.max);
+
+    // Position relative to internal walls (10mm margin)
+    // Mid (Bottom): -halfH + wall + 10mm + radius
+    const midY = -halfH + CONFIG.wall + 10 + DRV.mid.od / 2;
+
+    // Tweeter (Top): halfH - wall - 10mm - halfHeight
+    const tweetY = halfH - CONFIG.wall - 10 - DRV.tweeter.h / 2;
+
+    const ambX = -halfW + CONFIG.wall + CONFIG.ambientEdgeGap + PAD.ambient.w / 2;
+    const ambY = 0;
+    const ambZ = frontZ - CONFIG.baffleInset;
+
+    const left = {
+        mid: { x: midX, y: midY },
+        tweeter: { x: midX, y: tweetY },
+        ambient: { x: ambX, y: ambY, z: ambZ }
+    };
+
+    const right = {
+        mid: { x: -left.mid.x, y: left.mid.y },
+        tweeter: { x: -left.tweeter.x, y: left.tweeter.y },
+        ambient: { x: -left.ambient.x, y: left.ambient.y, z: left.ambient.z }
+    };
+
+    return { left, right };
+}
+
+const LAYOUT = computeLayout();
+
+// === SCENE SETUP ===
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdddddd);
+scene.fog = new THREE.Fog(0xdddddd, 2000, 5000);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 10, 10000);
+camera.position.set(0, 400, 900);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio || 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.physicallyCorrectLights = true;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxDistance = 4000;
+controls.minDistance = 400;
+
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.25,
+    0.6,
+    0.85
+);
+composer.addPass(bloomPass);
+
+const fxaaPass = new ShaderPass(FXAAShader);
+composer.addPass(fxaaPass);
+
+function updateComposerSize() {
+    const pixelRatio = renderer.getPixelRatio();
+    composer.setSize(window.innerWidth, window.innerHeight);
+    fxaaPass.material.uniforms['resolution'].value.set(
+        1 / (window.innerWidth * pixelRatio),
+        1 / (window.innerHeight * pixelRatio)
+    );
+}
+updateComposerSize();
+
+// === LIGHTING ===
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+scene.add(ambientLight);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+keyLight.position.set(600, 900, 1200);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.width = 2048;
+keyLight.shadow.mapSize.height = 2048;
+keyLight.shadow.camera.near = 200;
+keyLight.shadow.camera.far = 3000;
+keyLight.shadow.camera.left = -800;
+keyLight.shadow.camera.right = 800;
+keyLight.shadow.camera.top = 800;
+keyLight.shadow.camera.bottom = -800;
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
+fillLight.position.set(-900, 600, 500);
+scene.add(fillLight);
+
+const bottomLight = new THREE.PointLight(0xffffff, 0.7);
+bottomLight.position.set(0, -220, 0);
+scene.add(bottomLight);
+
+import { createSubRSS210, createMidRS125, createTweeterRST28, createCoaxCX120, createPRDS315, makeWindowBrace } from './drivers.js';
+
+// ... (retain materials and scene setup)
+
+// === MATERIALS ===
+const materials = createMaterials(THREE);
+const {
+    matCabinet,
+    matRubber,
+    matConeBlack,
+    matConeAlum,
+    matPhasePlug,
+    matMetal,
+    matFabric,
+    matFastener,
+    matAccent,
+    matPartition,
+    matPad,
+    matGrille,
+    matFrame,
+    matWall
+} = materials;
+
+// Move makeWindowBrace to helpers if needed, or keeping local if unique to box. 
+// Actually makeWindowBrace is used for assembly, not generic driver. Keep it here or move to drivers/helpers if shared.
+// For now I will keep local assembly helpers unless they conflict.
+
+// Need to remove old HELPERS and DRIVERS sections from here.
+
+function makeCurvedPanel(width, depth, sagitta, thickness, mat) {
+    // ... (Keep this local as it's box specific)
+    const halfW = width / 2;
+    const frontZ = depth / 2;
+    const backZ = -depth / 2;
+    const radius = (width * width) / (8 * sagitta) + sagitta / 2;
+    const angle = Math.asin(halfW / radius);
+    const centerZ = frontZ - (radius - sagitta);
+
+    const shape = new THREE.Shape();
+    shape.moveTo(-halfW, backZ);
+    shape.lineTo(halfW, backZ);
+    shape.lineTo(halfW, frontZ);
+    shape.absarc(0, centerZ, radius, Math.PI / 2 - angle, Math.PI / 2 + angle, false);
+    shape.lineTo(-halfW, backZ);
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: thickness,
+        bevelEnabled: false,
+        curveSegments: 64
+    });
+    geo.translate(0, 0, -thickness / 2);
+    geo.rotateX(Math.PI / 2);
+    return new THREE.Mesh(geo, mat);
+}
+
+function makeBeveledSideWall(side, bevelDepth, mat) {
+    // ... (Keep local)
+    const geo = new THREE.BoxGeometry(CONFIG.wall, CONFIG.box.h, CONFIG.box.d);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        const isFront = z > 0;
+        const isOuter = side === 'left' ? x < 0 : x > 0;
+        if (isFront && isOuter) {
+            pos.setZ(i, z - bevelDepth);
+        }
+    }
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
+}
+
+// === ASSEMBLY ===
+const assembly = new THREE.Group();
+scene.add(assembly);
+
+const cabGeo = new RoundedBoxGeometry(CONFIG.box.w, CONFIG.box.h, CONFIG.box.d, 6, 12);
+const cabinet = new THREE.Mesh(cabGeo, matCabinet);
+cabinet.visible = false;
+assembly.add(cabinet);
+
+const frontRadius = (CONFIG.box.w * CONFIG.box.w) / (8 * CONFIG.frontSagitta) + CONFIG.frontSagitta / 2;
+const frontAngle = 2 * Math.asin((CONFIG.box.w / 2) / frontRadius);
+const frontZCenter = frontZ - (frontRadius - CONFIG.frontSagitta);
+
+// Curved front shell (round face)
+const shellThickness = CONFIG.wall;
+const shellOuter = frontRadius + shellThickness;
+const shellGeo = new THREE.CylinderGeometry(
+    shellOuter,
+    shellOuter,
+    CONFIG.box.h,
+    80,
+    1,
+    true,
+    Math.PI / 2 - frontAngle / 2,
+    frontAngle
+);
+const shell = new THREE.Mesh(shellGeo, matCabinet);
+shell.position.set(0, 0, frontZCenter);
+shell.castShadow = true;
+shell.receiveShadow = true;
+shell.visible = CONFIG.showFrontShell;
+assembly.add(shell);
+
+const frameGeo = new THREE.CylinderGeometry(
+    frontRadius + CONFIG.frontFrameThickness,
+    frontRadius + CONFIG.frontFrameThickness,
+    CONFIG.box.h,
+    80,
+    1,
+    true,
+    Math.PI / 2 - frontAngle / 2,
+    frontAngle
+);
+const frame = new THREE.Mesh(frameGeo, matFrame);
+frame.position.set(0, 0, frontZCenter);
+frame.castShadow = true;
+frame.receiveShadow = true;
+assembly.add(frame);
+
+const grilleGeo = new THREE.CylinderGeometry(
+    frontRadius + CONFIG.frontFrameThickness + CONFIG.grilleThickness,
+    frontRadius + CONFIG.frontFrameThickness + CONFIG.grilleThickness,
+    CONFIG.box.h - 6,
+    80,
+    1,
+    true,
+    Math.PI / 2 - frontAngle / 2,
+    frontAngle
+);
+const grille = new THREE.Mesh(grilleGeo, matGrille);
+grille.position.set(0, 0, frontZCenter + 4);
+grille.castShadow = true;
+grille.receiveShadow = true;
+grille.visible = CONFIG.showGrille;
+assembly.add(grille);
+
+const internalW = CONFIG.box.w - 2 * CONFIG.wall;
+const internalH = CONFIG.box.h - 2 * CONFIG.wall;
+const internalD = CONFIG.box.d - 2 * CONFIG.wall;
+
+function makePerforatedPanel(width, height, thickness, holes, mat) {
+    const shape = new THREE.Shape();
+    const halfW = width / 2;
+    const halfH = height / 2;
+    shape.moveTo(-halfW, -halfH);
+    shape.lineTo(halfW, -halfH);
+    shape.lineTo(halfW, halfH);
+    shape.lineTo(-halfW, halfH);
+    shape.closePath();
+
+    holes.forEach(blob => {
+        const holePath = new THREE.Path();
+        const r = blob.r;
+        const x = blob.x || 0;
+        const y = blob.y || 0;
+        holePath.absarc(x, y, r, 0, Math.PI * 2, true);
+        shape.holes.push(holePath);
+    });
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: thickness,
+        bevelEnabled: false,
+        curveSegments: 64
+    });
+    geo.translate(0, 0, -thickness / 2);
+    return new THREE.Mesh(geo, mat);
+}
+
+// Carcass panels (butt joints with dados for partitions)
+const panelGroup = new THREE.Group();
+const wallX = CONFIG.box.w / 2 - CONFIG.wall / 2;
+const wallY = CONFIG.box.h / 2 - CONFIG.wall / 2;
+const wallZ = CONFIG.box.d / 2 - CONFIG.wall / 2;
+
+const halfInternalW = internalW / 2;
+const arcRadius = (internalW * internalW) / (8 * CONFIG.topBottomSagitta) + CONFIG.topBottomSagitta / 2;
+const slopeAtEdge = halfInternalW / Math.sqrt(arcRadius * arcRadius - halfInternalW * halfInternalW);
+const autoBevelDepth = CONFIG.wall * slopeAtEdge;
+const bevelDepth = Math.min(CONFIG.sideBevelDepth, autoBevelDepth);
+
+const leftWall = makeBeveledSideWall('left', bevelDepth, matWall);
+leftWall.position.set(-wallX, 0, 0);
+panelGroup.add(leftWall);
+
+const rightWall = makeBeveledSideWall('right', bevelDepth, matWall);
+rightWall.position.set(wallX, 0, 0);
+panelGroup.add(rightWall);
+
+const topPanel = makeCurvedPanel(internalW, CONFIG.box.d, CONFIG.topBottomSagitta, CONFIG.wall, matWall);
+topPanel.position.set(0, wallY, 0);
+panelGroup.add(topPanel);
+
+const bottomPanel = makeCurvedPanel(internalW, CONFIG.box.d, CONFIG.topBottomSagitta, CONFIG.wall, matWall);
+bottomPanel.position.set(0, -wallY, 0);
+panelGroup.add(bottomPanel);
+
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(internalW, internalH, CONFIG.wall), matWall);
+backWall.position.set(0, 0, -wallZ);
+panelGroup.add(backWall);
+
+const baffleZ = frontZ - CONFIG.baffleInset - CONFIG.wall / 2;
+const partitionOuterEdge = CONFIG.bassChamberWidth / 2 + CONFIG.partition;
+const centerBaffleW = CONFIG.bassChamberWidth + 2 * CONFIG.partition;
+// --- SUBWOOFER CUTOUT FIX ---
+// The subwoofer was inside the solid block. We now create a hole.
+const centerHoles = [{ y: 0, r: DRV.sub.cutout / 2 }];
+const centerBaffle = makePerforatedPanel(centerBaffleW, internalH, CONFIG.wall, centerHoles, matWall);
+centerBaffle.position.set(0, 0, baffleZ);
+panelGroup.add(centerBaffle);
+
+const splitLeftX = (LAYOUT.left.mid.x + LAYOUT.left.ambient.x) / 2;
+const splitRightX = (LAYOUT.right.mid.x + LAYOUT.right.ambient.x) / 2;
+const leftLeadW = Math.abs(splitLeftX + partitionOuterEdge);
+const leftAmbW = Math.abs(-internalW / 2 - splitLeftX);
+const rightLeadW = Math.abs(splitRightX - partitionOuterEdge);
+const rightAmbW = Math.abs(internalW / 2 - splitRightX);
+
+const leftLeadYaw = yawToListener(LAYOUT.left.mid.x, frontZ);
+const rightLeadYaw = yawToListener(LAYOUT.right.mid.x, frontZ);
+const leftAmbientYaw = -CONFIG.ambientOutDeg;
+const rightAmbientYaw = CONFIG.ambientOutDeg;
+
+const leftLeadHoles = [
+    { y: LAYOUT.left.mid.y, r: DRV.mid.cutout / 2 },
+    { y: LAYOUT.left.tweeter.y, r: DRV.tweeter.cutout / 2 } // Tweeter cutout
+];
+const leftLeadBaffle = makePerforatedPanel(leftLeadW, internalH, CONFIG.wall, leftLeadHoles, matWall);
+leftLeadBaffle.position.set(-(partitionOuterEdge + leftLeadW / 2), 0, baffleZ);
+leftLeadBaffle.rotation.y = THREE.MathUtils.degToRad(leftLeadYaw);
+panelGroup.add(leftLeadBaffle);
+
+const leftAmbientHoles = [{ y: 0, r: DRV.ambient.cutout / 2 }];
+const leftAmbientBaffle = makePerforatedPanel(leftAmbW, internalH, CONFIG.wall, leftAmbientHoles, matWall);
+leftAmbientBaffle.position.set(-internalW / 2 + leftAmbW / 2, 0, baffleZ);
+leftAmbientBaffle.rotation.y = THREE.MathUtils.degToRad(leftAmbientYaw);
+panelGroup.add(leftAmbientBaffle);
+
+const rightLeadHoles = [
+    { y: LAYOUT.right.mid.y, r: DRV.mid.cutout / 2 },
+    { y: LAYOUT.right.tweeter.y, r: DRV.tweeter.cutout / 2 }
+];
+const rightLeadBaffle = makePerforatedPanel(rightLeadW, internalH, CONFIG.wall, rightLeadHoles, matWall);
+rightLeadBaffle.position.set(partitionOuterEdge + rightLeadW / 2, 0, baffleZ);
+rightLeadBaffle.rotation.y = THREE.MathUtils.degToRad(rightLeadYaw);
+panelGroup.add(rightLeadBaffle);
+
+const rightAmbientHoles = [{ y: 0, r: DRV.ambient.cutout / 2 }];
+const rightAmbientBaffle = makePerforatedPanel(rightAmbW, internalH, CONFIG.wall, rightAmbientHoles, matWall);
+rightAmbientBaffle.position.set(internalW / 2 - rightAmbW / 2, 0, baffleZ);
+rightAmbientBaffle.rotation.y = THREE.MathUtils.degToRad(rightAmbientYaw);
+panelGroup.add(rightAmbientBaffle);
+
+panelGroup.traverse((child) => {
+    if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+    }
+});
+assembly.add(panelGroup);
+
+// Front "balcony" rails (top/bottom) for grille mounting
+// REMOVED: Caused Z-fighting with TopPanel and occluded Tweeter when moved down.
+//The Top/Bottom panels already provide the necessary structure.
+/*
+const railDepth = CONFIG.wall;
+const railHeight = 28;
+const railWidth = internalW - 20;
+const railZ = frontZ - railDepth / 2;
+const topRail = new THREE.Mesh(new THREE.BoxGeometry(railWidth, railHeight, railDepth), matFrame);
+topRail.position.set(0, CONFIG.box.h / 2 - CONFIG.wall - railHeight / 2, railZ);
+assembly.add(topRail);
+
+const bottomRail = new THREE.Mesh(new THREE.BoxGeometry(railWidth, railHeight, railDepth), matFrame);
+bottomRail.position.set(0, -CONFIG.box.h / 2 + CONFIG.wall + railHeight / 2, railZ);
+assembly.add(bottomRail);
+*/
+
+// Dados + partitions
+const dadoDepth = 3;
+const partitionOffset = CONFIG.bassChamberWidth / 2 + CONFIG.partition / 2;
+
+// Precise physical planes
+const zBackInner = -CONFIG.box.d / 2 + CONFIG.wall; // Inner face of back wall
+const zBaffleRear = baffleZ - CONFIG.wall / 2;      // Rear face of front baffle
+const internalGap = zBaffleRear - zBackInner;
+
+// === STATS CALCULATION ===
+function updateStats() {
+    // 1. External Dims
+    const extW = CONFIG.box.w;
+    const extH = CONFIG.box.h;
+    const extD = CONFIG.box.d;
+
+    // 2. Internal Dims (Approx)
+    // Height
+    const intH = extH - 2 * CONFIG.wall;
+
+    // Depth (Avg)
+    // zBackInner = -extD/2 + wall
+    // zBaffleRear = baffleZ - wall/2
+    // baffleZ = frontZ - inset - wall/2
+    // frontZ = extD/2
+    const frontZ = extD / 2;
+    const baffleZ = frontZ - CONFIG.baffleInset - CONFIG.wall / 2;
+    const zBaffleRear = baffleZ - CONFIG.wall / 2;
+    const zBackInner = -extD / 2 + CONFIG.wall;
+    const internalDepth = zBaffleRear - zBackInner;
+
+    // 3. Volumes
+    // Sub Chamber (Rectangular approximation)
+    const subW = CONFIG.bassChamberWidth;
+    const volSub = (subW * intH * internalDepth) / 1000000; // Liters
+
+    // Side Chambers (Complex shape, approx as Trapz/Rect)
+    // Total internal width approx: extW - 2*sideBevel - 2*wall (simplification)
+    // Actually: (InternalWidth - SubW - 2*Partition) / 2
+    // We determined InternalW in code, let's re-calc rough side width
+    // sideW approx = (1100 - 80 - 360 - 36)/2 = 312mm
+    const totalInternalW = extW - 2 * CONFIG.wall; // Rough bounding
+    const sideW = (totalInternalW - subW - 2 * CONFIG.partition) / 2;
+    const volSide = (sideW * intH * internalDepth) / 1000000;
+
+    const statsHtml = `
+        <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 10px;">
+            <strong>System Specs:</strong><br>
+            Dims: ${extW} x ${extH} x ${extD} mm<br>
+            <br>
+            <strong>Gross Volumes (Est):</strong><br>
+            Sub Chamber: ~${volSub.toFixed(1)} L<br>
+            Side Chamber: ~${volSide.toFixed(1)} L (x2)<br>
+            Total Internal: ~${(volSub + volSide * 2).toFixed(1)} L
+        </div>
+    `;
+
+    const infoPanel = document.getElementById('info');
+    if (infoPanel) {
+        // Check if stats already exist
+        let statsDiv = document.getElementById('perf-stats');
+        if (!statsDiv) {
+            statsDiv = document.createElement('div');
+            statsDiv.id = 'perf-stats';
+            infoPanel.appendChild(statsDiv);
+        }
+        statsDiv.innerHTML = statsHtml;
+    }
+}
+
+// Call stats update
+updateStats();
+
+// Partition physically enters the wall by dadoDepth on both sides
+const partitionDepth = internalGap + 2 * dadoDepth;
+const partitionZ = zBackInner + internalGap / 2;
+
+const partitionGeo = new THREE.BoxGeometry(CONFIG.partition, internalH, partitionDepth);
+[-1, 1].forEach((side) => {
+    const partition = new THREE.Mesh(partitionGeo, matPartition);
+    partition.position.set(side * partitionOffset, 0, partitionZ);
+    partition.castShadow = true;
+    partition.receiveShadow = true;
+    assembly.add(partition);
+});
+
+const dadoMat = matAccent;
+const dadoW = CONFIG.partition;
+const dadoH = 3;
+
+[-1, 1].forEach((side) => {
+    const x = side * partitionOffset;
+
+    // Top & Bottom Dados (running full length of partition insertion)
+    // They represent the groove cut into top/bottom panels
+    const tbDado = new THREE.Mesh(new THREE.BoxGeometry(dadoW, dadoH, partitionDepth), dadoMat);
+
+    // Top
+    const topDado = tbDado.clone();
+    topDado.position.set(x, wallY - CONFIG.wall / 2 + dadoH / 2, partitionZ);
+    panelGroup.add(topDado);
+
+    // Bottom
+    const bottomDado = tbDado.clone();
+    bottomDado.position.set(x, -wallY + CONFIG.wall / 2 - dadoH / 2, partitionZ);
+    panelGroup.add(bottomDado);
+
+    // Back Dado (cut into back wall)
+    // Positioned relative to back inner face, going deeper (negative Z)
+    const backDado = new THREE.Mesh(new THREE.BoxGeometry(dadoW, internalH, dadoDepth), dadoMat);
+    backDado.position.set(x, 0, zBackInner - dadoDepth / 2);
+    panelGroup.add(backDado);
+
+    // Front Dado (cut into baffle rear)
+    // Positioned relative to baffle rear face, going deeper (positive Z)
+    const frontDado = new THREE.Mesh(new THREE.BoxGeometry(dadoW, internalH, dadoDepth), dadoMat);
+    frontDado.position.set(x, 0, zBaffleRear + dadoDepth / 2);
+    panelGroup.add(frontDado);
+});
+
+const mountZ = baffleZ + CONFIG.wall / 2;
+
+const braceW = CONFIG.bassChamberWidth - 2;
+const braceH = internalH - 2 - DRV.pr.depth;
+const brace = makeWindowBrace(braceW, braceH, 30, CONFIG.wall, matPartition);
+const subBasketDepth = DRV.sub.depth - 20;
+const subMagnetDepth = 26;
+const subBackMost = mountZ + CONFIG.driverOffset - (subBasketDepth + 18 + subMagnetDepth / 2);
+const braceDesiredZ = subBackMost - 40;
+const braceMinZ = zBackInner + 10;
+const braceMaxZ = zBaffleRear - 10;
+const braceZ = clamp(braceDesiredZ, braceMinZ, braceMaxZ);
+brace.position.set(0, 0, braceZ);
+brace.castShadow = true;
+brace.receiveShadow = true;
+assembly.add(brace);
+
+const footGeo = new THREE.CylinderGeometry(15, 10, CONFIG.feetH, 16);
+const footMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+const fx = CONFIG.box.w / 2 - 40;
+const fz = CONFIG.box.d / 2 - 40;
+const fy = -CONFIG.box.h / 2 - CONFIG.feetH / 2;
+
+[{ x: fx, z: fz }, { x: -fx, z: fz }, { x: fx, z: -fz }, { x: -fx, z: -fz }].forEach((pos) => {
+    const foot = new THREE.Mesh(footGeo, footMat);
+    foot.position.set(pos.x, fy, pos.z);
+    foot.castShadow = true;
+    foot.receiveShadow = true;
+    assembly.add(foot);
+});
+
+function createLaser(length) {
+    const points = [];
+    points.push(new THREE.Vector3(0, 0, 0));
+    points.push(new THREE.Vector3(0, 0, length));
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true }));
+    return line;
+}
+
+function enableShadows(object) {
+    object.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+}
+
+function placeDriverAt(object, parent, x, y, z, yawDeg = 0, isLaser = false) {
+    const wrapper = new THREE.Group();
+    // Use local coordinates relative to the parent
+    wrapper.position.set(x, y, z);
+    // Apply local rotation (usually 0 if parent is already rotated)
+    wrapper.rotation.y = THREE.MathUtils.degToRad(yawDeg);
+
+    enableShadows(object);
+    wrapper.add(object);
+
+    if (isLaser) {
+        // Laser needs Global Z distance roughly. 
+        // Approximating distance based on Z=0 local means Z=ParentZ global.
+        // For simplicity, using a fixed length or omitting dynamic length calculation for now
+        // to avoid complex global world matrix updates in this function.
+        const laser = createLaser(CONFIG.listenerDist);
+        wrapper.add(laser);
+    }
+
+    // Add to specific parent (e.g. the baffle mesh)
+    parent.add(wrapper);
+}
+
+
+
+const driverZ = CONFIG.wall / 2 + CONFIG.driverOffset;
+
+// Subwoofer (Attached to centerBaffle)
+// Local X/Y=0 (Center of baffle), Local Z=driverZ (Front face + offset)
+placeDriverAt(createSubRSS210(materials), centerBaffle, 0, 0, driverZ, 0, false);
+
+// LEFT CHANNEL (Attached to leftLeadBaffle)
+// Local X=0 (Center of baffle), Local Y=GlobalY (since baffle Y=0), Local Z=driverZ
+placeDriverAt(createMidRS125(materials), leftLeadBaffle, 0, LAYOUT.left.mid.y, driverZ, 0, true);
+placeDriverAt(createTweeterRST28(materials), leftLeadBaffle, 0, LAYOUT.left.tweeter.y, driverZ, 0, true);
+
+// RIGHT CHANNEL (Attached to rightLeadBaffle)
+placeDriverAt(createMidRS125(materials), rightLeadBaffle, 0, LAYOUT.right.mid.y, driverZ, 0, true);
+placeDriverAt(createTweeterRST28(materials), rightLeadBaffle, 0, LAYOUT.right.tweeter.y, driverZ, 0, true);
+
+// AMBIENT CHANNELS (Attached to Ambient Baffles)
+// Ambient driver is at Y=0 locally (center of ambient baffle)
+placeDriverAt(createCoaxCX120(materials), leftAmbientBaffle, 0, 0, driverZ, 0, true);
+placeDriverAt(createCoaxCX120(materials), rightAmbientBaffle, 0, 0, driverZ, 0, true);
+
+const prObj = createPRDS315(materials);
+const prWrapper = new THREE.Group();
+prWrapper.position.set(0, -CONFIG.box.h / 2, 0);
+prWrapper.rotation.x = Math.PI / 2;
+enableShadows(prObj);
+prWrapper.add(prObj);
+assembly.add(prWrapper);
+
+const head = new THREE.Group();
+const headGeo = new THREE.SphereGeometry(28, 24, 18);
+const headMat = new THREE.MeshStandardMaterial({ color: 0x8fbf9f, roughness: 0.6, metalness: 0.0 });
+const headMesh = new THREE.Mesh(headGeo, headMat);
+headMesh.position.y = 28;
+head.add(headMesh);
+
+const neckGeo = new THREE.CylinderGeometry(10, 12, 20, 16);
+const neck = new THREE.Mesh(neckGeo, headMat);
+neck.position.y = 10;
+head.add(neck);
+
+head.position.copy(listenerPos);
+scene.add(head);
+
+const floorY = fy - CONFIG.feetH / 2;
+const floorGeo = new THREE.PlaneGeometry(5000, 5000);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0xbfbfbf, roughness: 0.9, metalness: 0.0 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = floorY;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(5000, 50, 0x999999, 0xdcdcdc);
+grid.position.y = floorY + 0.1;
+scene.add(grid);
+
+const blueprintGrid = new THREE.GridHelper(5000, 80, 0x2b6d98, 0x1a3c57);
+blueprintGrid.position.y = floorY + 0.1;
+blueprintGrid.visible = false;
+scene.add(blueprintGrid);
+
+const blueprint = new THREE.Group();
+const blueprintMat = new THREE.LineBasicMaterial({ color: 0x7cd0ff, transparent: true, opacity: 0.95 });
+blueprint.visible = false;
+scene.add(blueprint);
+
+function buildBlueprint() {
+    assembly.updateWorldMatrix(true, true);
+    assembly.traverse((child) => {
+        if (!child.isMesh || !child.geometry) return;
+        const edgesGeo = new THREE.EdgesGeometry(child.geometry, 25);
+        const line = new THREE.LineSegments(edgesGeo, blueprintMat);
+        line.matrix.copy(child.matrixWorld);
+        line.matrixAutoUpdate = false;
+        blueprint.add(line);
+    });
+}
+buildBlueprint();
+
+const normalBackground = scene.background instanceof THREE.Color ? scene.background.clone() : scene.background;
+const normalEnvironment = scene.environment;
+const normalFog = scene.fog;
+const normalExposure = renderer.toneMappingExposure;
+const normalBloom = bloomPass.strength;
+const blueprintBackground = new THREE.Color(0x0b1f33);
+
+function setBlueprintMode(enabled) {
+    assembly.visible = !enabled;
+    blueprint.visible = enabled;
+    grid.visible = !enabled;
+    floor.visible = !enabled;
+    blueprintGrid.visible = enabled;
+    head.visible = !enabled;
+    scene.background = enabled ? blueprintBackground : normalBackground;
+    scene.environment = enabled ? null : normalEnvironment;
+    scene.fog = enabled ? new THREE.Fog(0x0b1f33, 900, 5200) : normalFog;
+    renderer.toneMappingExposure = enabled ? 1.15 : normalExposure;
+    bloomPass.strength = enabled ? 0.05 : normalBloom;
+}
+
+const blueprintBtn = document.getElementById('toggleBlueprint');
+let blueprintEnabled = false;
+blueprintBtn.addEventListener('click', () => {
+    blueprintEnabled = !blueprintEnabled;
+    blueprintBtn.classList.toggle('active', blueprintEnabled);
+    blueprintBtn.textContent = blueprintEnabled ? 'Render' : 'Blueprint';
+    setBlueprintMode(blueprintEnabled);
+});
+
+window.addEventListener('keydown', (event) => {
+    if (event.key.toLowerCase() === 'b') {
+        blueprintBtn.click();
+    }
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    composer.render();
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    updateComposerSize();
+});
+
+animate();

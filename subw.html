@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dayton Audio Go+Play Custom Build</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f2f2f2; font-family: 'Segoe UI', sans-serif; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(20, 20, 20, 0.9);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #d00;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            max-width: 320px;
+            pointer-events: none;
+            font-size: 13px;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 16px; color: #ff3333; text-transform: uppercase; }
+        .row { display: flex; align-items: center; margin-bottom: 6px; }
+        .color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; display: inline-block; }
+        .note { color: #aaa; margin-top: 10px; font-style: italic; border-top: 1px solid #444; padding-top: 5px; }
+        #toolbar {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 5;
+        }
+        .btn {
+            background: #111;
+            color: #eee;
+            border: 1px solid #333;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+        }
+        .btn:hover { background: #1b1b1b; }
+        .btn.active { background: #0f2a44; border-color: #2f6b9c; color: #bfe7ff; }
+    </style>
+    <!-- Three.js Import -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h2>Dayton Audio Custom</h2>
+        
+        <div class="row">
+            <span class="color-dot" style="background:#cc0000"></span>
+            <div>
+                <strong>Center Sub:</strong> RSS210HF-4 (8")<br>
+                <span style="color:#888">Alum. Cone, Large Dustcap</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="color-dot" style="background:#444"></span>
+            <div>
+                <strong>Bottom PR:</strong> DS315-PR (12")<br>
+                <span style="color:#888">Down-firing, Flat profile</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="color-dot" style="background:#00aaff"></span>
+            <div>
+                <strong>Mid:</strong> RS125-8 (5")<br>
+                <span style="color:#888">Phase Plug, Alum. Cone</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="color-dot" style="background:#ffcc00"></span>
+            <div>
+                <strong>Tweeter:</strong> RST28F-4<br>
+                <span style="color:#888">Truncated Faceplate, Silk Dome</span>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="color-dot" style="background:#00ff00"></span>
+            <div>
+                <strong>Ambient:</strong> CX120-8 (4")<br>
+                <span style="color:#888">Coaxial</span>
+            </div>
+        </div>
+
+        <div class="note">
+            Красные линии показывают фокус на слушателя (3 метра).<br>
+            ЛКМ: Вращать | ПКМ: Двигать | B: Blueprint
+        </div>
+    </div>
+    <div id="toolbar">
+        <button id="toggleBlueprint" class="btn">Blueprint</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+        import { CONFIG, DRV, PAD } from './config.js';
+        import { createMaterials } from './materials.js';
+
+        const frontZ = CONFIG.box.d / 2;
+        const listenerPos = new THREE.Vector3(
+            CONFIG.listener.x,
+            CONFIG.listener.y,
+            frontZ + CONFIG.listenerDist
+        );
+
+        function yawToListener(x, z = frontZ) {
+            const dx = listenerPos.x - x;
+            const dz = listenerPos.z - z;
+            return THREE.MathUtils.radToDeg(Math.atan2(dx, dz));
+        }
+
+        function distanceToListener(x, z = frontZ) {
+            const dx = listenerPos.x - x;
+            const dz = listenerPos.z - z;
+            return Math.hypot(dx, dz);
+        }
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function computeLayout() {
+            const halfW = CONFIG.box.w / 2;
+            const halfH = CONFIG.box.h / 2;
+            const edge = CONFIG.edgeClearance;
+            const partitionOuter = CONFIG.bassChamberWidth / 2 + CONFIG.partition;
+
+            const midPadHalfW = PAD.mid.w / 2;
+            const midPadHalfH = PAD.mid.h / 2;
+            const tweetPadHalfW = PAD.tweeter.w / 2;
+            const tweetPadHalfH = PAD.tweeter.h / 2;
+
+            const midRange = {
+                min: -halfW + edge + midPadHalfW,
+                max: -partitionOuter - midPadHalfW
+            };
+
+            const midX = clamp(midRange.max, midRange.min, midRange.max);
+            const midY = -(halfH - edge - midPadHalfH);
+            const tweetY = (halfH - edge - tweetPadHalfH);
+
+            const ambX = -halfW + CONFIG.wall + PAD.ambient.t / 2;
+            const ambY = 0;
+            const ambZ = frontZ - CONFIG.ambientSideInset;
+
+            const left = {
+                mid: { x: midX, y: midY },
+                tweeter: { x: midX, y: tweetY },
+                ambient: { x: ambX, y: ambY, z: ambZ }
+            };
+
+            const right = {
+                mid: { x: -left.mid.x, y: left.mid.y },
+                tweeter: { x: -left.tweeter.x, y: left.tweeter.y },
+                ambient: { x: -left.ambient.x, y: left.ambient.y, z: left.ambient.z }
+            };
+
+            return { left, right };
+        }
+
+        const LAYOUT = computeLayout();
+
+        // === SCENE SETUP ===
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xdddddd);
+        // Add some fog to soften the distance (optional)
+        scene.fog = new THREE.Fog(0xdddddd, 2000, 5000);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 10, 10000);
+        camera.position.set(0, 400, 900);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        renderer.physicallyCorrectLights = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.maxDistance = 4000;
+        controls.minDistance = 400;
+
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.25,
+            0.6,
+            0.85
+        );
+        composer.addPass(bloomPass);
+
+        const fxaaPass = new ShaderPass(FXAAShader);
+        composer.addPass(fxaaPass);
+
+        function updateComposerSize() {
+            const pixelRatio = renderer.getPixelRatio();
+            composer.setSize(window.innerWidth, window.innerHeight);
+            fxaaPass.material.uniforms['resolution'].value.set(
+                1 / (window.innerWidth * pixelRatio),
+                1 / (window.innerHeight * pixelRatio)
+            );
+        }
+        updateComposerSize();
+
+        // === LIGHTING ===
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+        scene.add(ambientLight);
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+        keyLight.position.set(600, 900, 1200);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.width = 2048;
+        keyLight.shadow.mapSize.height = 2048;
+        keyLight.shadow.camera.near = 200;
+        keyLight.shadow.camera.far = 3000;
+        keyLight.shadow.camera.left = -800;
+        keyLight.shadow.camera.right = 800;
+        keyLight.shadow.camera.top = 800;
+        keyLight.shadow.camera.bottom = -800;
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        fillLight.position.set(-900, 600, 500);
+        scene.add(fillLight);
+
+        const bottomLight = new THREE.PointLight(0xffffff, 0.7);
+        bottomLight.position.set(0, -220, 0); // Light up the PR from below
+        scene.add(bottomLight);
+
+        // === MATERIALS ===
+        const {
+            matCabinet,
+            matRubber,
+            matConeBlack,
+            matConeAlum,
+            matPhasePlug,
+            matMetal,
+            matFabric,
+            matFastener,
+            matAccent,
+            matPartition,
+            matPad,
+            matGrille,
+            matFrame
+        } = createMaterials(THREE);
+
+        // === BUILDERS ===
+
+        function makeRing(outerD, innerD, thickness, mat, segments = 96) {
+            const shape = new THREE.Shape();
+            shape.absarc(0, 0, outerD / 2, 0, Math.PI * 2, false);
+            const hole = new THREE.Path();
+            hole.absarc(0, 0, innerD / 2, 0, Math.PI * 2, true);
+            shape.holes.push(hole);
+            const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: segments });
+            geo.translate(0, 0, -thickness / 2);
+            const ring = new THREE.Mesh(geo, mat);
+            return ring;
+        }
+
+        function addScrewRing(group, radius, count, screwD, headH, z, mat) {
+            const geo = new THREE.CylinderGeometry(screwD / 2, screwD / 2, headH, 16);
+            geo.rotateX(Math.PI / 2);
+            for (let i = 0; i < count; i++) {
+                const a = (i / count) * Math.PI * 2;
+                const screw = new THREE.Mesh(geo, mat);
+                screw.position.set(Math.cos(a) * radius, Math.sin(a) * radius, z);
+                group.add(screw);
+            }
+        }
+
+        function addSpokes(group, count, innerR, outerR, width, depth, z, mat) {
+            const length = outerR - innerR;
+            const geo = new THREE.BoxGeometry(length, width, depth);
+            for (let i = 0; i < count; i++) {
+                const a = (i / count) * Math.PI * 2;
+                const spoke = new THREE.Mesh(geo, mat);
+                spoke.position.set(Math.cos(a) * (innerR + length / 2), Math.sin(a) * (innerR + length / 2), z);
+                spoke.rotation.z = a;
+                group.add(spoke);
+            }
+        }
+
+        function makeRoundedRectPlate(w, h, r, thickness, mat) {
+            const shape = new THREE.Shape();
+            const x = -w / 2;
+            const y = -h / 2;
+            shape.moveTo(x + r, y);
+            shape.lineTo(x + w - r, y);
+            shape.quadraticCurveTo(x + w, y, x + w, y + r);
+            shape.lineTo(x + w, y + h - r);
+            shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            shape.lineTo(x + r, y + h);
+            shape.quadraticCurveTo(x, y + h, x, y + h - r);
+            shape.lineTo(x, y + r);
+            shape.quadraticCurveTo(x, y, x + r, y);
+            const geo = new THREE.ExtrudeGeometry(shape, {
+                depth: thickness,
+                bevelEnabled: true,
+                bevelThickness: 0.6,
+                bevelSize: 0.6,
+                bevelSegments: 2,
+                curveSegments: 24
+            });
+            geo.translate(0, 0, -thickness / 2);
+            return new THREE.Mesh(geo, mat);
+        }
+
+        function makeWindowBrace(w, h, frame, thickness, mat) {
+            const shape = new THREE.Shape();
+            shape.moveTo(-w / 2, -h / 2);
+            shape.lineTo(w / 2, -h / 2);
+            shape.lineTo(w / 2, h / 2);
+            shape.lineTo(-w / 2, h / 2);
+            shape.closePath();
+
+            const hole = new THREE.Path();
+            hole.moveTo(-w / 2 + frame, -h / 2 + frame);
+            hole.lineTo(w / 2 - frame, -h / 2 + frame);
+            hole.lineTo(w / 2 - frame, h / 2 - frame);
+            hole.lineTo(-w / 2 + frame, h / 2 - frame);
+            hole.closePath();
+            shape.holes.push(hole);
+
+            const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 8 });
+            geo.translate(0, 0, -thickness / 2);
+            return new THREE.Mesh(geo, mat);
+        }
+
+        // 1. Dayton RSS210HF-4 (Sub)
+        function createSubRSS210() {
+            const group = new THREE.Group();
+            const od = DRV.sub.od;
+            const cutout = DRV.sub.cutout;
+            
+            // Frame + gasket
+            const frame = makeRing(od, cutout, 6, matMetal);
+            frame.position.z = 2;
+            group.add(frame);
+            const gasket = makeRing(od - 6, cutout + 6, 1.5, matAccent);
+            gasket.position.z = 4.5;
+            group.add(gasket);
+
+            // Basket spokes (cast frame look)
+            addSpokes(group, 6, cutout / 2 - 10, od / 2 - 8, 10, 6, -4, matMetal);
+
+            // Surround (large roll)
+            const surroundGeo = new THREE.TorusGeometry(cutout / 2 - 8, 8, 24, 96);
+            const surround = new THREE.Mesh(surroundGeo, matRubber);
+            surround.position.z = 3;
+            group.add(surround);
+
+            // Cone (deep profile)
+            const coneGeo = new THREE.CylinderGeometry(28, cutout / 2 - 10, 28, 64, 1, true);
+            coneGeo.rotateX(Math.PI / 2);
+            const cone = new THREE.Mesh(coneGeo, matConeAlum);
+            cone.position.z = -6;
+            group.add(cone);
+
+            // Large dustcap
+            const capGeo = new THREE.SphereGeometry(55, 48, 24, 0, Math.PI * 2, 0, 1.1);
+            const cap = new THREE.Mesh(capGeo, matConeAlum);
+            cap.position.z = -2;
+            group.add(cap);
+
+            addScrewRing(group, od / 2 - 10, 6, 4, 2, 4.8, matFastener);
+
+            return group;
+        }
+
+        // 2. Dayton RS125-8 (Mid)
+        function createMidRS125() {
+            const group = new THREE.Group();
+            const od = DRV.mid.od;
+            const cutout = DRV.mid.cutout;
+            
+            // Frame
+            const frame = makeRing(od, cutout, 4, matMetal);
+            frame.position.z = 2;
+            group.add(frame);
+
+            // Basket spokes
+            addSpokes(group, 6, cutout / 2 - 8, od / 2 - 6, 7, 5, -3, matMetal);
+
+            // Surround
+            const surround = new THREE.Mesh(new THREE.TorusGeometry(cutout / 2 - 5, 5, 16, 64), matRubber);
+            surround.position.z = 3;
+            group.add(surround);
+
+            // Cone
+            const coneGeo = new THREE.CylinderGeometry(10, cutout / 2 - 7, 16, 48, 1, true);
+            coneGeo.rotateX(Math.PI / 2);
+            const cone = new THREE.Mesh(coneGeo, matConeAlum);
+            cone.position.z = -6;
+            group.add(cone);
+
+            // Phase plug (bullet)
+            const plugBase = new THREE.CylinderGeometry(6, 6, 8, 20);
+            plugBase.rotateX(Math.PI / 2);
+            const plugTip = new THREE.ConeGeometry(6, 16, 20);
+            plugTip.rotateX(Math.PI / 2);
+            const plug = new THREE.Mesh(plugBase, matPhasePlug);
+            plug.position.z = -1;
+            const tip = new THREE.Mesh(plugTip, matPhasePlug);
+            tip.position.z = -6;
+            group.add(plug);
+            group.add(tip);
+
+            addScrewRing(group, od / 2 - 8, 6, 3, 1.6, 3.8, matFastener);
+
+            return group;
+        }
+
+        // 3. Dayton RST28F-4 (Tweeter) - Truncated
+        function createTweeterRST28() {
+            const group = new THREE.Group();
+            // Dimensions: 104.8 W x 82.6 H, cutout 73
+            const w = DRV.tweeter.w;
+            const h = DRV.tweeter.h;
+            const cutout = DRV.tweeter.cutout;
+
+            // Truncated faceplate with rounded corners
+            const plate = makeRoundedRectPlate(w, h, 9, 3.2, matMetal);
+            plate.position.z = 1.6;
+            group.add(plate);
+
+            // Shallow waveguide ring
+            const waveguide = makeRing(80, cutout, 1.6, matAccent);
+            waveguide.position.z = 2.5;
+            group.add(waveguide);
+
+            // Fabric dome
+            const domeGeo = new THREE.SphereGeometry(14.5, 40, 20, 0, Math.PI * 2, 0, 1.1);
+            const dome = new THREE.Mesh(domeGeo, matFabric);
+            dome.position.z = 4.1;
+            group.add(dome);
+
+            // Screw heads (4)
+            const screwGeo = new THREE.CylinderGeometry(2, 2, 2, 12);
+            screwGeo.rotateX(Math.PI / 2);
+            const sx = w / 2 - 10;
+            const sy = h / 2 - 10;
+            [[sx, sy], [-sx, sy], [sx, -sy], [-sx, -sy]].forEach(([x, y]) => {
+                const screw = new THREE.Mesh(screwGeo, matFastener);
+                screw.position.set(x, y, 3);
+                group.add(screw);
+            });
+
+            return group;
+        }
+
+        // 4. Dayton CX120-8 (Coax)
+        function createCoaxCX120() {
+            const group = new THREE.Group();
+            const od = DRV.ambient.od;
+            const cutout = DRV.ambient.cutout;
+
+            // Frame
+            const frame = makeRing(od, cutout, 4, matMetal);
+            frame.position.z = 2;
+            group.add(frame);
+
+            // Surround
+            const surround = new THREE.Mesh(new THREE.TorusGeometry(cutout / 2 - 6, 4.8, 16, 64), matRubber);
+            surround.position.z = 3;
+            group.add(surround);
+
+            // Woofer cone
+            const coneGeo = new THREE.CylinderGeometry(12, cutout / 2 - 8, 14, 48, 1, true);
+            coneGeo.rotateX(Math.PI / 2);
+            const cone = new THREE.Mesh(coneGeo, matConeBlack);
+            cone.position.z = -6;
+            group.add(cone);
+
+            // Coax waveguide + tweeter
+            const waveguide = new THREE.Mesh(new THREE.CylinderGeometry(22, 18, 6, 32), matAccent);
+            waveguide.rotateX(Math.PI / 2);
+            waveguide.position.z = 0;
+            group.add(waveguide);
+
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 10, 24), matMetal);
+            post.rotateX(Math.PI / 2);
+            post.position.z = -1;
+            group.add(post);
+
+            const dome = new THREE.Mesh(new THREE.SphereGeometry(8.5, 24, 12, 0, Math.PI * 2, 0, 1.2), matFabric);
+            dome.position.z = 4;
+            group.add(dome);
+
+            // Support arms (3-spoke)
+            addSpokes(group, 3, 12, cutout / 2 - 12, 4, 3, 3.5, matMetal);
+
+            addScrewRing(group, od / 2 - 8, 4, 3, 1.6, 3.8, matFastener);
+
+            return group;
+        }
+
+        // 5. Dayton DS315-PR (Passive) - 12 inch
+        function createPRDS315() {
+            const group = new THREE.Group();
+            const od = DRV.pr.od;
+            const cutout = DRV.pr.cutout;
+            const pistonRadius = cutout / 2;
+            const surroundMajor = (od/2 + cutout/2) / 2;
+            const surroundTube = (od/2 - cutout/2) / 2;
+
+            // Frame
+            const frame = makeRing(od, cutout, 6, matMetal);
+            frame.position.z = 2;
+            group.add(frame);
+
+            // Surround (Inverted or Fat Roll)
+            const surround = new THREE.Mesh(new THREE.TorusGeometry(surroundMajor, surroundTube, 24, 96), matRubber);
+            surround.position.z = 3.5;
+            group.add(surround);
+
+            // Flat Piston / Disc
+            const diskGeo = new THREE.CylinderGeometry(pistonRadius, pistonRadius, 2.4, 96);
+            diskGeo.rotateX(Math.PI / 2);
+            const disk = new THREE.Mesh(diskGeo, matConeBlack);
+            disk.position.z = 1.4;
+            group.add(disk);
+
+            // Logo spot (Cosmetic)
+            const capGeo = new THREE.CylinderGeometry(26, 26, 1.6, 48);
+            capGeo.rotateX(Math.PI / 2);
+            const cap = new THREE.Mesh(capGeo, matAccent);
+            cap.position.z = 3;
+            group.add(cap);
+
+            addScrewRing(group, od / 2 - 12, 8, 4, 2, 4.2, matFastener);
+
+            return group;
+        }
+
+
+        // === ASSEMBLY ===
+
+        const assembly = new THREE.Group();
+        scene.add(assembly);
+
+        // -- Cabinet --
+        const cabGeo = new RoundedBoxGeometry(CONFIG.box.w, CONFIG.box.h, CONFIG.box.d, 6, 12);
+        const cabinet = new THREE.Mesh(cabGeo, matCabinet);
+        cabinet.castShadow = true;
+        cabinet.receiveShadow = true;
+        assembly.add(cabinet);
+        
+        // Wireframe for edges
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(cabGeo), new THREE.LineBasicMaterial({color: 0x000000, opacity: 0.15, transparent: true}));
+        cabinet.add(edges);
+
+        // -- Curved Front Frame + Grille (Bose-style bow) --
+        const frontRadius = (CONFIG.box.w * CONFIG.box.w) / (8 * CONFIG.frontSagitta) + CONFIG.frontSagitta / 2;
+        const frontAngle = 2 * Math.asin((CONFIG.box.w / 2) / frontRadius);
+        const frontZCenter = frontZ - (frontRadius - CONFIG.frontSagitta);
+
+        const frameGeo = new THREE.CylinderGeometry(
+            frontRadius + CONFIG.frontFrameThickness,
+            frontRadius + CONFIG.frontFrameThickness,
+            CONFIG.box.h,
+            80,
+            1,
+            true,
+            Math.PI / 2 - frontAngle / 2,
+            frontAngle
+        );
+        const frame = new THREE.Mesh(frameGeo, matFrame);
+        frame.position.set(0, 0, frontZCenter);
+        frame.rotation.x = 0;
+        frame.rotation.z = 0;
+        frame.castShadow = true;
+        frame.receiveShadow = true;
+        assembly.add(frame);
+
+        const grilleGeo = new THREE.CylinderGeometry(
+            frontRadius + CONFIG.frontFrameThickness + CONFIG.grilleThickness,
+            frontRadius + CONFIG.frontFrameThickness + CONFIG.grilleThickness,
+            CONFIG.box.h - 6,
+            80,
+            1,
+            true,
+            Math.PI / 2 - frontAngle / 2,
+            frontAngle
+        );
+        const grille = new THREE.Mesh(grilleGeo, matGrille);
+        grille.position.set(0, 0, frontZCenter + 4);
+        grille.castShadow = true;
+        grille.receiveShadow = true;
+        assembly.add(grille);
+
+        // -- Internal Partitions (bass chamber separation) --
+        const internalH = CONFIG.box.h - 2 * CONFIG.wall;
+        const internalD = CONFIG.box.d - 2 * CONFIG.wall;
+        const partitionGeo = new THREE.BoxGeometry(CONFIG.partition, internalH, internalD);
+        const partitionOffset = CONFIG.bassChamberWidth / 2 + CONFIG.partition / 2;
+        [ -1, 1 ].forEach((side) => {
+            const partition = new THREE.Mesh(partitionGeo, matPartition);
+            partition.position.set(side * partitionOffset, 0, 0);
+            partition.castShadow = true;
+            partition.receiveShadow = true;
+            assembly.add(partition);
+        });
+
+        // -- Window Brace in Bass Chamber --
+        const braceW = CONFIG.bassChamberWidth - 2 * CONFIG.wall;
+        const braceH = internalH - 40;
+        const brace = makeWindowBrace(braceW, braceH, 30, CONFIG.wall, matPartition);
+        brace.position.set(0, 0, frontZ - 120);
+        brace.castShadow = true;
+        brace.receiveShadow = true;
+        assembly.add(brace);
+
+        // -- Feet --
+        const footGeo = new THREE.CylinderGeometry(15, 10, CONFIG.feetH, 16);
+        const footMat = new THREE.MeshStandardMaterial({color: 0x222222});
+        const fx = CONFIG.box.w/2 - 40;
+        const fz = CONFIG.box.d/2 - 40;
+        const fy = -CONFIG.box.h/2 - CONFIG.feetH/2;
+        
+        [ {x:fx, z:fz}, {x:-fx, z:fz}, {x:fx, z:-fz}, {x:-fx, z:-fz} ].forEach(pos => {
+            const foot = new THREE.Mesh(footGeo, footMat);
+            foot.position.set(pos.x, fy, pos.z);
+            foot.castShadow = true;
+            foot.receiveShadow = true;
+            assembly.add(foot);
+        });
+
+        // -- Drivers Position & Rotation Helper --
+        
+        // Laser Beam Helper
+        function createLaser(length) {
+            const points = [];
+            points.push(new THREE.Vector3(0, 0, 0));
+            points.push(new THREE.Vector3(0, 0, length));
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true }));
+            return line;
+        }
+
+        function enableShadows(object) {
+            object.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+        }
+
+        // Function to place drivers on Front Baffle
+        function placeDriver(object, x, y, yawDeg, isLaser = false, zOffset = 0) {
+            const wrapper = new THREE.Group();
+            wrapper.position.set(x, y, frontZ + zOffset); // On front face (plus pad offset)
+            wrapper.rotation.y = THREE.MathUtils.degToRad(yawDeg);
+            
+            enableShadows(object);
+            wrapper.add(object);
+            
+            if (isLaser) {
+                const laser = createLaser(distanceToListener(x, frontZ));
+                wrapper.add(laser);
+            }
+            
+            assembly.add(wrapper);
+        }
+
+        function addPad(width, height, thickness, x, y, z, yawDeg, name) {
+            const padGeo = new THREE.BoxGeometry(width, height, thickness);
+            const pad = new THREE.Mesh(padGeo, matPad);
+            pad.position.set(x, y, z);
+            pad.rotation.y = THREE.MathUtils.degToRad(yawDeg);
+            pad.name = name;
+            pad.castShadow = true;
+            pad.receiveShadow = true;
+            assembly.add(pad);
+        }
+
+        const padZ = frontZ - CONFIG.wall - PAD.mid.t / 2;
+        const padZOffset = padZ - frontZ;
+
+        // 1. Center Sub
+        addPad(PAD.sub.w, PAD.sub.h, PAD.sub.t, 0, 0, padZ, 0, 'sub_pad');
+        placeDriver(createSubRSS210(), 0, 0, 0, false, padZOffset);
+
+        // 2. Left Leading (Mid + Tweet)
+        const leftLeadYaw = yawToListener(LAYOUT.left.mid.x, frontZ);
+        const rightLeadYaw = yawToListener(LAYOUT.right.mid.x, frontZ);
+        // Mid
+        addPad(PAD.mid.w, PAD.mid.h, PAD.mid.t, LAYOUT.left.mid.x, LAYOUT.left.mid.y, padZ, leftLeadYaw, 'left_mid_pad');
+        placeDriver(createMidRS125(), LAYOUT.left.mid.x, LAYOUT.left.mid.y, leftLeadYaw, true, padZOffset);
+        // Tweet (Above Mid)
+        addPad(PAD.tweeter.w, PAD.tweeter.h, PAD.tweeter.t, LAYOUT.left.tweeter.x, LAYOUT.left.tweeter.y, padZ, leftLeadYaw, 'left_tweeter_pad');
+        placeDriver(createTweeterRST28(), LAYOUT.left.tweeter.x, LAYOUT.left.tweeter.y, leftLeadYaw, true, padZOffset);
+
+        // 3. Right Leading (Mirrored)
+        // Mid
+        addPad(PAD.mid.w, PAD.mid.h, PAD.mid.t, LAYOUT.right.mid.x, LAYOUT.right.mid.y, padZ, rightLeadYaw, 'right_mid_pad');
+        placeDriver(createMidRS125(), LAYOUT.right.mid.x, LAYOUT.right.mid.y, rightLeadYaw, true, padZOffset);
+        // Tweet
+        addPad(PAD.tweeter.w, PAD.tweeter.h, PAD.tweeter.t, LAYOUT.right.tweeter.x, LAYOUT.right.tweeter.y, padZ, rightLeadYaw, 'right_tweeter_pad');
+        placeDriver(createTweeterRST28(), LAYOUT.right.tweeter.x, LAYOUT.right.tweeter.y, rightLeadYaw, true, padZOffset);
+
+        // 4. Ambient Pair (Coax) - Far sides, angled out (pad offset forward)
+        // Left Amb (outward, toward -X)
+        const leftAmbientYaw = -90 + CONFIG.ambientOutDeg;
+        const rightAmbientYaw = 90 - CONFIG.ambientOutDeg;
+        addPad(PAD.ambient.w, PAD.ambient.h, PAD.ambient.t, LAYOUT.left.ambient.x, LAYOUT.left.ambient.y, LAYOUT.left.ambient.z, leftAmbientYaw, 'left_ambient_pad');
+        placeDriver(createCoaxCX120(), LAYOUT.left.ambient.x, LAYOUT.left.ambient.y, leftAmbientYaw, false, LAYOUT.left.ambient.z - frontZ);
+        // Right Amb (outward, toward +X)
+        addPad(PAD.ambient.w, PAD.ambient.h, PAD.ambient.t, LAYOUT.right.ambient.x, LAYOUT.right.ambient.y, LAYOUT.right.ambient.z, rightAmbientYaw, 'right_ambient_pad');
+        placeDriver(createCoaxCX120(), LAYOUT.right.ambient.x, LAYOUT.right.ambient.y, rightAmbientYaw, false, LAYOUT.right.ambient.z - frontZ); 
+
+
+        // 5. Bottom Passive Radiator (The Fix)
+        const prObj = createPRDS315();
+        const prWrapper = new THREE.Group();
+        // Position on bottom face
+        prWrapper.position.set(0, -CONFIG.box.h/2, 0);
+        
+        // Rotation:
+        // Cylinder default: Y-up.
+        // We want it facing Down (Y-down).
+        // Rotate X by +90 degrees (front -> down).
+        prWrapper.rotation.x = Math.PI / 2;
+        
+        enableShadows(prObj);
+        prWrapper.add(prObj);
+        assembly.add(prWrapper);
+
+
+        // -- Listener Visualization (Target) --
+        const targetGeo = new THREE.SphereGeometry(30, 16, 16);
+        const targetMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+        const target = new THREE.Mesh(targetGeo, targetMat);
+        target.position.copy(listenerPos);
+        scene.add(target);
+
+        // Floor + Grid
+        const floorY = fy - CONFIG.feetH / 2;
+        const floorGeo = new THREE.PlaneGeometry(5000, 5000);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0xbfbfbf, roughness: 0.9, metalness: 0.0 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = floorY;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const grid = new THREE.GridHelper(5000, 50, 0x999999, 0xdcdcdc);
+        grid.position.y = floorY + 0.1;
+        scene.add(grid);
+
+        const blueprintGrid = new THREE.GridHelper(5000, 80, 0x2b6d98, 0x1a3c57);
+        blueprintGrid.position.y = floorY + 0.1;
+        blueprintGrid.visible = false;
+        scene.add(blueprintGrid);
+
+        // Blueprint view
+        const blueprint = new THREE.Group();
+        const blueprintMat = new THREE.LineBasicMaterial({ color: 0x7cd0ff, transparent: true, opacity: 0.95 });
+        blueprint.visible = false;
+        scene.add(blueprint);
+
+        function buildBlueprint() {
+            assembly.updateWorldMatrix(true, true);
+            assembly.traverse((child) => {
+                if (!child.isMesh || !child.geometry) return;
+                const edges = new THREE.EdgesGeometry(child.geometry, 25);
+                const line = new THREE.LineSegments(edges, blueprintMat);
+                line.matrix.copy(child.matrixWorld);
+                line.matrixAutoUpdate = false;
+                blueprint.add(line);
+            });
+        }
+        buildBlueprint();
+
+        const normalBackground = scene.background instanceof THREE.Color ? scene.background.clone() : scene.background;
+        const normalEnvironment = scene.environment;
+        const normalFog = scene.fog;
+        const normalExposure = renderer.toneMappingExposure;
+        const normalBloom = bloomPass.strength;
+        const blueprintBackground = new THREE.Color(0x0b1f33);
+
+        function setBlueprintMode(enabled) {
+            assembly.visible = !enabled;
+            blueprint.visible = enabled;
+            grid.visible = !enabled;
+            floor.visible = !enabled;
+            blueprintGrid.visible = enabled;
+            target.visible = !enabled;
+            scene.background = enabled ? blueprintBackground : normalBackground;
+            scene.environment = enabled ? null : normalEnvironment;
+            scene.fog = enabled ? new THREE.Fog(0x0b1f33, 900, 5200) : normalFog;
+            renderer.toneMappingExposure = enabled ? 1.15 : normalExposure;
+            bloomPass.strength = enabled ? 0.05 : normalBloom;
+        }
+
+        const blueprintBtn = document.getElementById('toggleBlueprint');
+        let blueprintEnabled = false;
+        blueprintBtn.addEventListener('click', () => {
+            blueprintEnabled = !blueprintEnabled;
+            blueprintBtn.classList.toggle('active', blueprintEnabled);
+            blueprintBtn.textContent = blueprintEnabled ? 'Render' : 'Blueprint';
+            setBlueprintMode(blueprintEnabled);
+        });
+
+        window.addEventListener('keydown', (event) => {
+            if (event.key.toLowerCase() === 'b') {
+                blueprintBtn.click();
+            }
+        });
+
+
+        // === ANIMATION ===
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            composer.render();
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            updateComposerSize();
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #f2f2f2;
+  font-family: 'Segoe UI', sans-serif;
+}
+#info {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(20, 20, 20, 0.9);
+  color: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid #d00;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  max-width: 320px;
+  pointer-events: none;
+  font-size: 13px;
+}
+h2 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  color: #ff3333;
+  text-transform: uppercase;
+}
+.row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  display: inline-block;
+}
+.note {
+  color: #aaa;
+  margin-top: 10px;
+  font-style: italic;
+  border-top: 1px solid #444;
+  padding-top: 5px;
+}
+#toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 5;
+}
+.btn {
+  background: #111;
+  color: #eee;
+  border: 1px solid #333;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.btn:hover {
+  background: #1b1b1b;
+}
+.btn.active {
+  background: #0f2a44;
+  border-color: #2f6b9c;
+  color: #bfe7ff;
+}
