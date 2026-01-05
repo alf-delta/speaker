@@ -1,64 +1,87 @@
 <!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dayton Audio Go+Play Custom Build</title>
-    <link rel="icon" type="image/png" href="/favicon.png">
-  </head>
-  <body>
-    <div id="info">
-      <h2>Dayton Audio Custom</h2>
+<html lang="en">
 
-      <div class="row">
-        <span class="color-dot" style="background:#cc0000"></span>
-        <div>
-          <strong>Center Sub:</strong> RSS210HF-4 (8")<br />
-          <span style="color:#888">Alum. Cone, Large Dustcap</span>
-        </div>
-      </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dayton Audio Go+Play Custom Build</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+</head>
 
-      <div class="row">
-        <span class="color-dot" style="background:#444"></span>
-        <div>
-          <strong>Bottom PR:</strong> DS315-PR (12")<br />
-          <span style="color:#888">Down-firing, Flat profile</span>
-        </div>
-      </div>
+<body>
+  <div id="info">
+    <h2>Dayton Audio Custom</h2>
 
-      <div class="row">
-        <span class="color-dot" style="background:#00aaff"></span>
-        <div>
-          <strong>Mid:</strong> RS125-8 (5")<br />
-          <span style="color:#888">Phase Plug, Alum. Cone</span>
-        </div>
-      </div>
-
-      <div class="row">
-        <span class="color-dot" style="background:#ffcc00"></span>
-        <div>
-          <strong>Tweeter:</strong> RST28F-4<br />
-          <span style="color:#888">Truncated Faceplate, Silk Dome</span>
-        </div>
-      </div>
-
-      <div class="row">
-        <span class="color-dot" style="background:#00ff00"></span>
-        <div>
-          <strong>Ambient:</strong> CX120-8 (4")<br />
-          <span style="color:#888">Coaxial</span>
-        </div>
-      </div>
-
-      <div class="note">
-        Красные линии показывают фокус на слушателя (3 метра).<br />
-        ЛКМ: Вращать | ПКМ: Двигать | B: Blueprint
+    <div class="row">
+      <span class="color-dot" style="background:#cc0000"></span>
+      <div>
+        <strong>Center Sub:</strong> RSS210HF-4 (8")<br />
+        <span style="color:#888">Alum. Cone, Large Dustcap</span>
       </div>
     </div>
-    <div id="toolbar">
-      <button id="toggleBlueprint" class="btn">Blueprint</button>
+
+    <div class="row">
+      <span class="color-dot" style="background:#444"></span>
+      <div>
+        <strong>Bottom PR:</strong> DS315-PR (12")<br />
+        <span style="color:#888">Down-firing, Flat profile</span>
+      </div>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
-  </body>
+    <div class="row">
+      <span class="color-dot" style="background:#00aaff"></span>
+      <div>
+        <strong>Mid:</strong> RS125-8 (5")<br />
+        <span style="color:#888">Phase Plug, Alum. Cone</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="color-dot" style="background:#ffcc00"></span>
+      <div>
+        <strong>Tweeter:</strong> RST28F-4<br />
+        <span style="color:#888">Truncated Faceplate, Silk Dome</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="color-dot" style="background:#00ff00"></span>
+      <div>
+        <strong>Ambient:</strong> CX120-8 (4")<br />
+        <span style="color:#888">Coaxial</span>
+      </div>
+    </div>
+
+    <div class="note">
+      Red lines indicate listener focus (3 meters).<br />
+      LMB: Rotate | RMB: Pan | B: Blueprint
+    </div>
+  </div>
+  <div id="toolbar">
+    <button id="toggleBlueprint" class="btn">Blueprint</button>
+  </div>
+
+  <div id="env-toolbar"
+    style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100;">
+    <button class="btn env-btn active" data-mode="studio">Studio</button>
+    <button class="btn env-btn" data-mode="tv">TV Setup</button>
+    <button class="btn env-btn" data-mode="sideboard">Sideboard</button>
+  </div>
+
+  <script type="module">
+    import { envManager } from '/src/main.js';
+
+    const btns = document.querySelectorAll('.env-btn');
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        btns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        envManager.setMode(btn.dataset.mode);
+      });
+    });
+  </script>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>

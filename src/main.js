@@ -8,7 +8,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { EnvironmentManager } from './environments.js';
 import { CONFIG, DRV, PAD } from './config.js';
+
 import { createMaterials } from './materials.js';
 
 const frontZ = CONFIG.box.d / 2;
@@ -96,8 +99,17 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 1.1;
 renderer.physicallyCorrectLights = true;
 document.body.appendChild(renderer.domElement);
+
+// --- LABEL RENDERER (CSS2D) ---
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0px';
+labelRenderer.domElement.style.pointerEvents = 'none'; // Cliks pass through
+document.body.appendChild(labelRenderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -299,20 +311,33 @@ const internalW = CONFIG.box.w - 2 * CONFIG.wall;
 const internalH = CONFIG.box.h - 2 * CONFIG.wall;
 const internalD = CONFIG.box.d - 2 * CONFIG.wall;
 
-function makePerforatedPanel(width, height, thickness, holes, mat) {
+// Mitered Panel Generator (Trapezoidal Thickness)
+// growDir: 1 = grows to Right (Positive X), -1 = grows to Left (Negative X)
+function makeTrapezoidalPanel(width, height, thickness, holes, mat, miterOffset, growDir) {
     const shape = new THREE.Shape();
-    const halfW = width / 2;
+    // Origin is at the Hinge Edge (Vertical X=0).
+    const w = width * growDir;
     const halfH = height / 2;
-    shape.moveTo(-halfW, -halfH);
-    shape.lineTo(halfW, -halfH);
-    shape.lineTo(halfW, halfH);
-    shape.lineTo(-halfW, halfH);
+
+    // Front Face (Rectangle)
+    // Points: (0, -h/2), (w, -h/2), (w, h/2), (0, h/2)
+    shape.moveTo(0, -halfH);
+    shape.lineTo(w, -halfH);
+    shape.lineTo(w, halfH);
+    shape.lineTo(0, halfH);
     shape.closePath();
 
     holes.forEach(blob => {
         const holePath = new THREE.Path();
         const r = blob.r;
-        const x = blob.x || 0;
+        // Holes are currently centered relative to panel geometric center.
+        // We need to shift them to be relative to the Hinge.
+        // If growDir=1 (Right), CenterX = width/2.
+        // If growDir=-1 (Left), CenterX = -width/2.
+        // But hole configs in main.js assume X=0 is center. 
+        // So HoleX_local = CenterX + blob.x
+        const centerX = (width / 2) * growDir;
+        const x = centerX + (blob.x || 0);
         const y = blob.y || 0;
         holePath.absarc(x, y, r, 0, Math.PI * 2, true);
         shape.holes.push(holePath);
@@ -323,7 +348,32 @@ function makePerforatedPanel(width, height, thickness, holes, mat) {
         bevelEnabled: false,
         curveSegments: 64
     });
-    geo.translate(0, 0, -thickness / 2);
+    // Extrude creates Z=0 to Z=thickness.
+    // We want Back Face to be at Z=thickness. Front at Z=0. 
+    // Wait, usually we center extrusion? But user said "Use Hinge as (0,0)".
+    // Let's keep Z=0 as Front Face.
+
+    // Vertex Modification for Miter
+    const posAttribute = geo.attributes.position;
+    const posCount = posAttribute.count;
+    const vertex = new THREE.Vector3();
+
+    for (let i = 0; i < posCount; i++) {
+        vertex.fromBufferAttribute(posAttribute, i);
+        // Check if Vertex is on Back Face (Z approx thickness)
+        if (Math.abs(vertex.z - thickness) < 0.1) {
+            // Check if Vertex is on Hinge Edge (X approx 0)
+            if (Math.abs(vertex.x) < 0.1) {
+                // Apply Offset
+                // If growDir=1 (Right), shift Right (+).
+                // If growDir=-1 (Left), shift Left (-).
+                vertex.x += miterOffset * growDir;
+                posAttribute.setX(i, vertex.x);
+            }
+        }
+    }
+
+    geo.computeVertexNormals();
     return new THREE.Mesh(geo, mat);
 }
 
@@ -365,8 +415,11 @@ const centerBaffleW = CONFIG.bassChamberWidth + 2 * CONFIG.partition;
 // --- SUBWOOFER CUTOUT FIX ---
 // The subwoofer was inside the solid block. We now create a hole.
 const centerHoles = [{ y: 0, r: DRV.sub.cutout / 2 }];
-const centerBaffle = makePerforatedPanel(centerBaffleW, internalH, CONFIG.wall, centerHoles, matWall);
-centerBaffle.position.set(0, 0, baffleZ);
+// Center Baffle uses standard perforated panel (no miter needed, or simple)
+// Let's restore simple helper if needed, or use Trapezoid with offset 0.
+const centerBaffle = makeTrapezoidalPanel(centerBaffleW, internalH, CONFIG.wall, centerHoles, matWall, 0, 1);
+// Centering: Origin is Left Edge. Position X = -Width/2.
+centerBaffle.position.set(-centerBaffleW / 2, 0, baffleZ);
 panelGroup.add(centerBaffle);
 
 const splitLeftX = (LAYOUT.left.mid.x + LAYOUT.left.ambient.x) / 2;
@@ -385,29 +438,51 @@ const leftLeadHoles = [
     { y: LAYOUT.left.mid.y, r: DRV.mid.cutout / 2 },
     { y: LAYOUT.left.tweeter.y, r: DRV.tweeter.cutout / 2 } // Tweeter cutout
 ];
-const leftLeadBaffle = makePerforatedPanel(leftLeadW, internalH, CONFIG.wall, leftLeadHoles, matWall);
-leftLeadBaffle.position.set(-(partitionOuterEdge + leftLeadW / 2), 0, baffleZ);
-leftLeadBaffle.rotation.y = THREE.MathUtils.degToRad(leftLeadYaw);
-panelGroup.add(leftLeadBaffle);
-
 const leftAmbientHoles = [{ y: 0, r: DRV.ambient.cutout / 2 }];
-const leftAmbientBaffle = makePerforatedPanel(leftAmbW, internalH, CONFIG.wall, leftAmbientHoles, matWall);
-leftAmbientBaffle.position.set(-internalW / 2 + leftAmbW / 2, 0, baffleZ);
-leftAmbientBaffle.rotation.y = THREE.MathUtils.degToRad(leftAmbientYaw);
-panelGroup.add(leftAmbientBaffle);
 
 const rightLeadHoles = [
     { y: LAYOUT.right.mid.y, r: DRV.mid.cutout / 2 },
     { y: LAYOUT.right.tweeter.y, r: DRV.tweeter.cutout / 2 }
 ];
-const rightLeadBaffle = makePerforatedPanel(rightLeadW, internalH, CONFIG.wall, rightLeadHoles, matWall);
-rightLeadBaffle.position.set(partitionOuterEdge + rightLeadW / 2, 0, baffleZ);
+const rightAmbientHoles = [{ y: 0, r: DRV.ambient.cutout / 2 }];
+
+// --- MITER CALCULATION ---
+const refYaw = Math.abs(leftLeadYaw); // approx 6 deg
+const ambYaw = Math.abs(leftAmbientYaw); // approx 12-20 deg
+const angleDiff = Math.abs(refYaw - ambYaw);
+const halfAngle = THREE.MathUtils.degToRad(angleDiff / 2);
+const miterOffset = CONFIG.wall * Math.tan(halfAngle);
+
+// LEFT SIDE
+// Split Point X is the Hinge
+const hingeLeftX = splitLeftX;
+// Left Lead: Grows Right (from hinge towards center). Rotated by leftLeadYaw.
+const leftLeadBaffle = makeTrapezoidalPanel(leftLeadW, internalH, CONFIG.wall, leftLeadHoles, matWall, miterOffset, 1);
+leftLeadBaffle.position.set(hingeLeftX, 0, baffleZ);
+leftLeadBaffle.rotation.y = THREE.MathUtils.degToRad(leftLeadYaw);
+panelGroup.add(leftLeadBaffle);
+
+// Left Ambient: Grows Left (from hinge towards edge). Rotated by leftAmbientYaw.
+const leftAmbientBaffle = makeTrapezoidalPanel(leftAmbW, internalH, CONFIG.wall, leftAmbientHoles, matWall, miterOffset, -1);
+leftAmbientBaffle.position.set(hingeLeftX, 0, baffleZ);
+leftAmbientBaffle.rotation.y = THREE.MathUtils.degToRad(leftAmbientYaw);
+panelGroup.add(leftAmbientBaffle);
+
+// RIGHT SIDE
+// Split Point X is the Hinge
+const hingeRightX = splitRightX;
+
+// Right Lead: Grows Left (from hinge towards center). Rotated by rightLeadYaw.
+// Hinge is at its RIGHT edge. GrowDir = -1.
+// Miter Offset: moves Back Hinge Left (-).
+const rightLeadBaffle = makeTrapezoidalPanel(rightLeadW, internalH, CONFIG.wall, rightLeadHoles, matWall, miterOffset, -1);
+rightLeadBaffle.position.set(hingeRightX, 0, baffleZ);
 rightLeadBaffle.rotation.y = THREE.MathUtils.degToRad(rightLeadYaw);
 panelGroup.add(rightLeadBaffle);
 
-const rightAmbientHoles = [{ y: 0, r: DRV.ambient.cutout / 2 }];
-const rightAmbientBaffle = makePerforatedPanel(rightAmbW, internalH, CONFIG.wall, rightAmbientHoles, matWall);
-rightAmbientBaffle.position.set(internalW / 2 - rightAmbW / 2, 0, baffleZ);
+// Right Ambient: Grows Right (from hinge towards edge). Rotated by rightAmbientYaw.
+const rightAmbientBaffle = makeTrapezoidalPanel(rightAmbW, internalH, CONFIG.wall, rightAmbientHoles, matWall, miterOffset, 1);
+rightAmbientBaffle.position.set(hingeRightX, 0, baffleZ);
 rightAmbientBaffle.rotation.y = THREE.MathUtils.degToRad(rightAmbientYaw);
 panelGroup.add(rightAmbientBaffle);
 
@@ -630,25 +705,30 @@ function placeDriverAt(object, parent, x, y, z, yawDeg = 0, isLaser = false) {
 
 
 
-const driverZ = CONFIG.wall / 2 + CONFIG.driverOffset;
+// FIX: Gap visible at wall+offset. Trying flush mount (wall thickness).
+const driverZ = CONFIG.wall;
 
 // Subwoofer (Attached to centerBaffle)
 // Local X/Y=0 (Center of baffle), Local Z=driverZ (Front face + offset)
-placeDriverAt(createSubRSS210(materials), centerBaffle, 0, 0, driverZ, 0, false);
+// FIX: Center Baffle origin is Left Edge. Driver should be at width/2.
+placeDriverAt(createSubRSS210(materials), centerBaffle, centerBaffleW / 2, 0, driverZ, 0, false);
 
 // LEFT CHANNEL (Attached to leftLeadBaffle)
-// Local X=0 (Center of baffle), Local Y=GlobalY (since baffle Y=0), Local Z=driverZ
-placeDriverAt(createMidRS125(materials), leftLeadBaffle, 0, LAYOUT.left.mid.y, driverZ, 0, true);
-placeDriverAt(createTweeterRST28(materials), leftLeadBaffle, 0, LAYOUT.left.tweeter.y, driverZ, 0, true);
+// Local X should be width/2 because Origin is Hinge and grows Right (1).
+placeDriverAt(createMidRS125(materials), leftLeadBaffle, leftLeadW / 2, LAYOUT.left.mid.y, driverZ, 0, true);
+placeDriverAt(createTweeterRST28(materials), leftLeadBaffle, leftLeadW / 2, LAYOUT.left.tweeter.y, driverZ, 0, true);
 
 // RIGHT CHANNEL (Attached to rightLeadBaffle)
-placeDriverAt(createMidRS125(materials), rightLeadBaffle, 0, LAYOUT.right.mid.y, driverZ, 0, true);
-placeDriverAt(createTweeterRST28(materials), rightLeadBaffle, 0, LAYOUT.right.tweeter.y, driverZ, 0, true);
+// Right Lead grows Left (-1). Origin is Hinge. Center is at -width/2.
+placeDriverAt(createMidRS125(materials), rightLeadBaffle, -rightLeadW / 2, LAYOUT.right.mid.y, driverZ, 0, true);
+placeDriverAt(createTweeterRST28(materials), rightLeadBaffle, -rightLeadW / 2, LAYOUT.right.tweeter.y, driverZ, 0, true);
 
 // AMBIENT CHANNELS (Attached to Ambient Baffles)
 // Ambient driver is at Y=0 locally (center of ambient baffle)
-placeDriverAt(createCoaxCX120(materials), leftAmbientBaffle, 0, 0, driverZ, 0, true);
-placeDriverAt(createCoaxCX120(materials), rightAmbientBaffle, 0, 0, driverZ, 0, true);
+// Left Ambient: Grows Left (-1). Center is -width/2.
+placeDriverAt(createCoaxCX120(materials), leftAmbientBaffle, -leftAmbW / 2, 0, driverZ, 0, true);
+// Right Ambient: Grows Right (1). Center is width/2.
+placeDriverAt(createCoaxCX120(materials), rightAmbientBaffle, rightAmbW / 2, 0, driverZ, 0, true);
 
 const prObj = createPRDS315(materials);
 const prWrapper = new THREE.Group();
@@ -745,16 +825,21 @@ window.addEventListener('keydown', (event) => {
     }
 });
 
+// === ENVIRONMENT MANAGER ===
+export const envManager = new EnvironmentManager(scene, camera, controls, assembly);
+
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
     composer.render();
+    labelRenderer.render(scene, camera);
 }
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
     updateComposerSize();
 });
 

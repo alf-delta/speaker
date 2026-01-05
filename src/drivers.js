@@ -120,7 +120,7 @@ export function createSubRSS210(materials) {
     capGeo.rotateX(Math.PI / 2); // Лицом к зрителю
 
     const cap = new THREE.Mesh(capGeo, materials.matConeAlum);
-    cap.position.z = -14;
+    cap.position.z = -36;
     cap.scale.set(1, 1, 0.7); // Сплюснутая сфера
     group.add(cap);
 
@@ -149,7 +149,7 @@ export function createMidRS125(materials) {
 
     // Диффузор
     const cone = makeCurvedCone(10, (cutout / 2) - 6, 22, 64, materials.matConeAlum);
-    cone.position.z = -1;
+    cone.position.z = 5;
     group.add(cone);
 
     // Phase Plug FIX
