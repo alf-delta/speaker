@@ -1,0 +1,270 @@
+{
+  "revision": "03",
+  "drivers": {
+    "sub": {
+      "model": "RSS265HF-4",
+      "ohms": 4,
+      "flange": 9.5,
+      "od": 266,
+      "cutout": 236,
+      "body": 235,
+      "depth": 137,
+      "projection": 12,
+      "fs": 25.6,
+      "qts": 0.45,
+      "qms": 3.06,
+      "vas": 54,
+      "sd": 356.3,
+      "xmax": 12.3,
+      "mms": 120,
+      "cms": 0.32,
+      "re": 3.5,
+      "le": 0.96,
+      "bl": 11.43
+    },
+    "mid": {
+      "model": "SB15NBAC30-8",
+      "ohms": 8,
+      "flange": 6.5,
+      "od": 150,
+      "cutout": 125,
+      "body": 123.9,
+      "depth": 79,
+      "projection": 5,
+      "fs": 35.5,
+      "qts": 0.37,
+      "qms": 4.22,
+      "vas": 17,
+      "sd": 82,
+      "xmax": 5
+    },
+    "tweeter": {
+      "model": "SB26ADC-C000-4",
+      "ohms": 4,
+      "flange": 3,
+      "od": 100,
+      "cutout": 71,
+      "body": 70,
+      "depth": 39,
+      "projection": 5,
+      "fs": 680
+    },
+    "ambient": {
+      "model": "10F/4424G00",
+      "ohms": 4,
+      "flange": 3.5,
+      "od": 97.5,
+      "cutout": 79,
+      "body": 78,
+      "depth": 40,
+      "projection": 3,
+      "fs": 90,
+      "qts": 0.29,
+      "qms": 3.2,
+      "vas": 2,
+      "sd": 36,
+      "xmax": 2.6
+    },
+    "pr": {
+      "model": "RSS315-PR",
+      "flange": 9.6,
+      "od": 314,
+      "cutout": 283,
+      "body": 282,
+      "depth": 100,
+      "projection": 10,
+      "sd": 506.7,
+      "xmax": 26
+    }
+  },
+  "channels": [
+    {
+      "out": 1,
+      "input": "L",
+      "driver": "SB15 · L",
+      "amp": "V3 №1 · L",
+      "band": "130–2300 Гц",
+      "delay": "По измерению",
+      "level": "По измерению"
+    },
+    {
+      "out": 2,
+      "input": "R",
+      "driver": "SB15 · R",
+      "amp": "V3 №1 · R",
+      "band": "130–2300 Гц",
+      "delay": "По измерению",
+      "level": "По измерению"
+    },
+    {
+      "out": 3,
+      "input": "L",
+      "driver": "SB26 · L",
+      "amp": "V3 №2 · L",
+      "band": "От 2300 Гц",
+      "delay": "По измерению",
+      "level": "По измерению"
+    },
+    {
+      "out": 4,
+      "input": "R",
+      "driver": "SB26 · R",
+      "amp": "V3 №2 · R",
+      "band": "От 2300 Гц",
+      "delay": "По измерению",
+      "level": "По измерению"
+    },
+    {
+      "out": 5,
+      "input": "L",
+      "driver": "10F · наружный L",
+      "amp": "V3 №3 · L",
+      "band": "300–8000 Гц",
+      "delay": "+4 мс, проба",
+      "level": "−12 дБ, проба"
+    },
+    {
+      "out": 6,
+      "input": "R",
+      "driver": "10F · наружный R",
+      "amp": "V3 №3 · R",
+      "band": "300–8000 Гц",
+      "delay": "+4 мс, проба",
+      "level": "−12 дБ, проба"
+    },
+    {
+      "out": 7,
+      "input": "0,5 L + 0,5 R",
+      "driver": "RSS265 · саб",
+      "amp": "V3 Mono",
+      "band": "22–130 Гц",
+      "delay": "По измерению",
+      "level": "По измерению"
+    },
+    {
+      "out": 8,
+      "input": "—",
+      "driver": "Резерв",
+      "amp": "—",
+      "band": "Mute",
+      "delay": "—",
+      "level": "—"
+    }
+  ],
+  "config": {
+    "revision": "03",
+    "plywoodDensity": 650,
+    "box": {
+      "w": 1360,
+      "h": 420,
+      "d": 470
+    },
+    "wall": 18,
+    "cap": 36,
+    "back": 36,
+    "front": 36,
+    "satelliteFront": 18,
+    "partition": 18,
+    "feetH": 30,
+    "arcSag": 130,
+    "bassFaceZ": 185,
+    "bassChamberWidth": 420,
+    "brace": {
+      "frame": 30,
+      "thickness": 18,
+      "z": [
+        25,
+        -25
+      ]
+    },
+    "midBox": {
+      "w": 184,
+      "h": 300,
+      "d": 104,
+      "x": 350,
+      "z": 122,
+      "yawDeg": 8,
+      "panelW": 220
+    },
+    "ambientBox": {
+      "w": 112,
+      "h": 140,
+      "d": 48,
+      "x": 590,
+      "z": 85,
+      "yawDeg": 35,
+      "panelW": 148
+    },
+    "layout": {
+      "midY": -62,
+      "tweeterY": 71
+    },
+    "displacement": {
+      "sub": 2.2,
+      "pr": 1,
+      "bassWiring": 0.1,
+      "mid": 0.45,
+      "tweeter": 0.1,
+      "midWiring": 0.04,
+      "ambient": 0.05,
+      "ambientWiring": 0.02
+    },
+    "grille": {
+      "thickness": 2,
+      "minClearance": 5,
+      "pitch": 6,
+      "hole": 5
+    },
+    "tuningHz": 28,
+    "subsonicHz": 22,
+    "subCrossoverHz": 130,
+    "tweeterCrossoverHz": 2300,
+    "ambientHighpassHz": 300,
+    "ambientLowpassHz": 8000,
+    "ambientDelayMs": 4,
+    "ambientLevelDb": -12,
+    "bassEq": {
+      "frequency": 30,
+      "gainDb": 3,
+      "q": 1
+    },
+    "defaultVolts": 20,
+    "listenerDist": 3000,
+    "rearClearance": 150
+  },
+  "derived": {
+    "ih": 348,
+    "id": 348,
+    "backInner": -199,
+    "frontInner": 149,
+    "braceLiters": 1.52928,
+    "grossBass": 50.86368,
+    "grossMid": 5.7408,
+    "grossAmbient": 0.75264,
+    "netBass": 46.0344,
+    "netMid": 5.1508,
+    "netAmbient": 0.6826399999999999,
+    "centerSpacing": 133,
+    "stereoAngle": 13.86763736853404,
+    "arcRadius": 1843.4615384615386,
+    "planArea": 581123.7907773114,
+    "mainAxisCrossing": 2612.379402834473
+  },
+  "material": {
+    "woodM3": 0.08457597773944987,
+    "assumedDensity": 650,
+    "woodKg": 54.974385530642415
+  },
+  "sources": {
+    "sub": "https://www.daytonaudio.com/images/resources/295-460-dayton-audio-rss265hf-4-specifications-46172.pdf",
+    "mid": "https://sbacoustics.com/wp-content/uploads/2020/02/5in-SB15NBAC30-8.pdf",
+    "tweeter": "https://sbacoustics.com/wp-content/uploads/2020/02/SB26ADC-C000-4.pdf",
+    "ambient": "https://www.scan-speak.dk/datasheet/pdf/10f-4424g00.pdf",
+    "pr": "https://www.daytonaudio.com/images/resources/295-502--rss315-pr-specification-sheet.pdf",
+    "dsp": "https://www.minidsp.com/products/minidsp-in-a-box/minidsp-flex-eight",
+    "amp": "https://fosiaudio.com/products/fosi-audio-v3-300w-x2-2-0-channel-hi-fi-stereo-audio-amplifier-with-tpa3255-chip",
+    "subAmp": "https://fosiaudio.com/products/fosi-audio-v3-mono-power-amplifier",
+    "microphone": "https://www.minidsp.com/products/acoustic-measurement/umik-1",
+    "crossover": "https://www.linkwitzlab.com/crossovers.htm"
+  }
+}

@@ -1,94 +1,79 @@
-<!DOCTYPE html>
-<html lang="en">
-
+<!doctype html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dayton Audio Go+Play Custom Build</title>
-  <link rel="icon" type="image/png" href="/favicon.png">
-  <script type="text/javascript">
-    (function (c, l, a, r, i, t, y) {
-      c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments) };
-      t = l.createElement(r); t.async = 1; t.src = "https://www.clarity.ms/tag/" + i;
-      y = l.getElementsByTagName(r)[0]; y.parentNode.insertBefore(t, y);
-    })(window, document, "clarity", "script", "uwufahv02s");
-  </script>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eeeee7">
+  <title>MONOBLOCK / ARC — акустический проект</title>
+  <link rel="icon" href="/favicon.png">
 </head>
-
 <body>
-  <div id="info">
-    <h2>Dayton Audio Custom</h2>
-
-    <div class="row">
-      <span class="color-dot" style="background:#cc0000"></span>
-      <div>
-        <strong>Center Sub:</strong> RSS210HF-4 (8")<br />
-        <span style="color:#888">Alum. Cone, Large Dustcap</span>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Моноблок — главная"><span class="brand-mark">◒</span><span>MONOBLOCK<small>DAYTON · SB ACOUSTICS · SCAN-SPEAK</small></span></a>
+    <nav aria-label="Разделы проекта"><button class="nav-tab active" data-page="model" aria-current="page">01 <span>Конструкция</span></button><button class="nav-tab" data-page="acoustics">02 <span>Акустика</span></button><button class="nav-tab" data-page="build">03 <span>Сборка</span></button></nav>
+    <span class="revision">REV. 03 <i></i> Расчётный прототип</span>
+  </header>
+  <main>
+    <section id="page-model" class="page model-page">
+      <aside class="project-panel">
+        <div class="eyebrow">ОДИН КОРПУС. ПЯТЬ КАМЕР.</div>
+        <h1>Одна дуга.&nbsp;<br>Широкая сцена.</h1>
+        <p class="intro">Трёхполосный стереомоноблок<br> с фронтальным пассивником и направленными наружу каналами.</p>
+        <div class="size-block"><span>Габариты корпуса / Ш × В × Г</span><strong id="box-size"></strong><small>мм · без ножек и выступающих частей динамиков</small></div>
+        <div id="chamber-list" class="chamber-list"></div>
+        <div class="project-note"><span class="tiny-label">КОНСТРУКТИВ</span><p>Верх и низ — сэндвич 2 × 18 мм с дугой. Пять утопленных панелей: основные L/R внутрь на 8°, наружные каналы — наружу на 35°.</p></div>
+        <a href="/engineering.md" download class="text-link">Скачать расчёт и допущения <span>↗</span></a>
+      </aside>
+      <div class="viewport-column">
+        <div class="viewport" id="viewport" aria-label="Интерактивная трёхмерная модель акустической системы">
+          <div class="view-top"><span class="drawing-id">MB–03 / СБОРОЧНАЯ МОДЕЛЬ</span><span class="units">ЕДИНИЦЫ: ММ</span></div>
+          <div class="view-controls" role="group" aria-label="Вид модели">
+            <button class="view-btn active" data-mode="solid" aria-pressed="true">Корпус</button><button class="view-btn" data-mode="cutaway" aria-pressed="false">Внутри</button><button class="view-btn" data-mode="exploded" aria-pressed="false">Разборка</button><button class="view-btn" data-mode="blueprint" aria-pressed="false">Чертёж</button>
+          </div>
+          <div class="model-options"><label><input type="checkbox" id="grille"> Защитная решётка</label><label><input type="checkbox" id="axes"> Оси динамиков</label></div>
+          <div id="model-loading" class="model-loading" role="status">Подготовка 3D-модели…</div>
+          <div class="camera-controls" role="group" aria-label="Положение камеры"><button data-camera="iso" class="active" aria-pressed="true">3D</button><button data-camera="front" aria-pressed="false">Спереди</button><button data-camera="rear" aria-pressed="false">Сзади</button><button data-camera="top" aria-pressed="false">Сверху</button></div>
+          <div class="view-bottom"><span>Вращение — мышью · масштаб — колёсиком</span><label><input type="checkbox" id="dimensions" checked> Размеры</label></div>
+        </div>
+        <div class="model-footer"><div><span class="tiny-label">НАСТРОЙКА БАСА</span><strong><span id="bass-tuning"></span> <small>Гц</small></strong></div><div><span class="tiny-label">РАЗДЕЛ ПОЛОС / ЦЕЛЬ</span><strong><span id="band-targets"></span> <small>Гц</small></strong></div><div class="footer-note">Объёмы учитывают распорки и оценку вытеснения динамиками. Точная настройка — после измерения прототипа.</div></div>
       </div>
-    </div>
-
-    <div class="row">
-      <span class="color-dot" style="background:#444"></span>
-      <div>
-        <strong>Bottom PR:</strong> DS315-PR (12")<br />
-        <span style="color:#888">Down-firing, Flat profile</span>
+    </section>
+    <section id="page-acoustics" class="page content-page" hidden>
+      <div class="section-heading"><div><div class="eyebrow">02 / РАСЧЁТНАЯ МОДЕЛЬ</div><h2>Бас под контролем.</h2></div><p>Линейная модель RSS265HF-4 + RSS315-PR.<br>Это прогноз, а не измеренная АЧХ готовой системы.</p></div>
+      <div class="acoustic-layout">
+        <aside class="calculation-inputs">
+          <h3>Условия расчёта</h3>
+          <div class="parameter-note"><strong>RSS315-PR</strong><span>Mms 300 г · Cms 0,22 мм/Н</span></div>
+          <p class="field-note">Паспортные параметры без добавочного груза. Масса для настройки рассчитывается по чистому объёму корпуса.</p>
+          <label class="field" for="voltage">Сигнал усилителя <output id="voltage-value">20 В RMS</output></label>
+          <input type="range" id="voltage" min="1" max="40" value="20" step="0.5">
+          <label class="check-field"><input type="checkbox" id="protection" checked> ФВЧ 22 Гц, Linkwitz–Riley 24 дБ/окт</label>
+          <p class="field-note">Напряжение до ФВЧ; синус. Ход показан как пиковое отклонение в одну сторону. ФНЧ 130 Гц здесь не включён. F₃ отсчитывается от уровня на 100 Гц.</p>
+          <label class="check-field"><input type="checkbox" id="bass-eq"> Проба EQ: +3 дБ / 30 Гц / Q 1</label><p class="field-note">Пробная коррекция меняет и АЧХ, и ход. Это не измеренный пресет для готового корпуса.</p>
+          <dl id="tuning-stats" class="stats-list"></dl>
+          <div id="excursion-status" class="calculation-status" role="status"></div>
+        </aside>
+        <div class="charts">
+          <div class="chart-head"><h3>Низкочастотный отклик</h3><span>дБ относительно 100 Гц</span></div><div id="response-chart" class="chart"></div>
+          <div class="chart-legend"><span class="legend-line teal"></span> Выбранные ФВЧ / EQ <span class="legend-line dashed"></span> Без ФВЧ</div>
+          <div class="chart-head second-chart"><h3>Ход диффузоров</h3><span>мм, peak · 10–200 Гц</span></div><div id="excursion-chart" class="chart"></div>
+          <div class="chart-legend"><span class="legend-line teal"></span> RSS265HF-4 <span class="legend-line ochre"></span> RSS315-PR <span class="legend-line dashed"></span> Xmax</div>
+          <p class="chart-disclaimer">Модель сосредоточенных параметров, QL = 10, ρ = 1,18 кг/м³, c = 343 м/с. Суммирование НЧ-источников без разности пути. Не учитывает комнату, дифракцию, нагрев, нелинейность подвеса и реальные потери наполнителя.</p>
+        </div>
       </div>
-    </div>
-
-    <div class="row">
-      <span class="color-dot" style="background:#00aaff"></span>
-      <div>
-        <strong>Mid:</strong> RS125-8 (5")<br />
-        <span style="color:#888">Phase Plug, Alum. Cone</span>
-      </div>
-    </div>
-
-    <div class="row">
-      <span class="color-dot" style="background:#ffcc00"></span>
-      <div>
-        <strong>Tweeter:</strong> RST28F-4<br />
-        <span style="color:#888">Truncated Faceplate, Silk Dome</span>
-      </div>
-    </div>
-
-    <div class="row">
-      <span class="color-dot" style="background:#00ff00"></span>
-      <div>
-        <strong>Ambient:</strong> CX120-8 (4")<br />
-        <span style="color:#888">Coaxial</span>
-      </div>
-    </div>
-
-    <div class="note">
-      Red lines indicate listener focus (3 meters).<br />
-      LMB: Rotate | RMB: Pan | B: Blueprint
-    </div>
-  </div>
-  <div id="toolbar">
-    <button id="toggleBlueprint" class="btn">Blueprint</button>
-  </div>
-
-  <div id="env-toolbar"
-    style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100;">
-    <button class="btn env-btn active" data-mode="studio">Studio</button>
-    <button class="btn env-btn" data-mode="tv">TV Setup</button>
-    <button class="btn env-btn" data-mode="sideboard">Sideboard</button>
-  </div>
-
-  <script type="module">
-    import { envManager } from '/src/main.js';
-
-    const btns = document.querySelectorAll('.env-btn');
-    btns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        btns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        envManager.setMode(btn.dataset.mode);
-      });
-    });
-  </script>
-
+      <div class="engineering-notes" id="acoustic-notes"></div>
+    </section>
+    <section id="page-build" class="page content-page" hidden>
+      <div class="section-heading"><div><div class="eyebrow">03 / ПОДГОТОВКА К СБОРКЕ</div><h2>От модели к мастерской.</h2></div><a class="download-btn" href="/engineering.md" download>Полный расчёт ↗</a></div>
+      <div class="weight-note"><strong id="wood-mass">Оценка массы — около 55 кг фанеры</strong><span>При принятой плотности 650 кг/м³, до головок, электроники и решётки. Проверь допустимую нагрузку консоли; облегчённые крышки потребуют отдельного пересчёта.</span></div>
+      <div class="build-notice"><strong>Перед фрезеровкой — сверка с физическими динамиками.</strong><span>Габариты головок сверены с паспортами. Проёмы содержат предварительные монтажные зазоры; клеммы, крепёж и выборки переносятся по реальным деталям. Масса PR, стыки наклонных панелей и тепловой режим проверяются на прототипе.</span></div>
+      <div class="bom-section"><h3>Выбранные головки</h3><p class="muted">Глубина — консервативный монтажный габарит от лицевой плоскости, мм. Наличие в продаже отдельно не подтверждено.</p><div class="table-scroll"><table><thead><tr><th>Модель / паспорт</th><th>Шт.</th><th>Нагрузка</th><th>Фланец</th><th>Проём*</th><th>Глубина*</th></tr></thead><tbody id="component-list"></tbody></table></div></div>
+      <div class="bom-section"><h3>DSP и усиление</h3><p class="muted">Flex Eight с аналоговыми выходами. Полосы — исходные акустические цели; 4 мс и −12 дБ для наружной пары — пробные настройки после согласования основных каналов. Обычный пресет оставляет выходы 5/6 в Mute.</p><div class="table-scroll"><table class="channel-table"><thead><tr><th>Выход</th><th>Сигнал</th><th>Динамик</th><th>Усилитель</th><th>Полоса</th><th>Задержка</th></tr></thead><tbody id="channel-list"></tbody></table></div></div>
+      <div class="build-grid"><div><h3>Панели корпуса</h3><p class="muted">Размеры в мм. Для крышек указаны заготовки под дугу; соединительные щёки требуют подгонки скосов. Пропил и припуски не включены.</p><div class="table-scroll"><table><thead><tr><th>Деталь</th><th>Ш × В × Т, мм</th><th>Шт.</th></tr></thead><tbody id="cut-list"></tbody></table></div><button id="download-cutlist" class="text-link">Скачать ведомость TSV ↗</button></div>
+      <aside class="build-guide"><h3>Порядок настройки</h3><ol><li><strong>Проверить комплектующие.</strong> Снять размеры корзин, клемм и фланцев; измерить T/S сабвуфера и PR.</li><li><strong>Собрать герметичные камеры.</strong> Проклеить стыки, поставить уплотнители и резьбовые втулки. Проверить отсутствие утечек.</li><li><strong>Настроить бас.</strong> Подобрать груз PR до 28 Гц по импедансу и минимуму хода активного динамика.</li><li><strong>Измерить каждую полосу.</strong> Настроить акустические разделы 130 / 2300 Гц, уровни и задержки. Проверить сумму и обратную полярность.</li><li><strong>Проверить в комнате.</strong> Настроить лимитеры; наружные 10F подключать только после настройки основного стерео.</li></ol>
+      <a class="text-link" href="/drawings.svg" target="_blank" rel="noopener">Открыть размерный чертёж ↗</a></aside></div>
+      <div class="engineering-notes" id="build-notes"></div>
+      <div class="source-heading"><h3>Основание расчёта</h3><span>Документы производителя и акустические принципы</span></div><div id="source-links" class="source-links"></div>
+    </section>
+  </main>
   <script type="module" src="/src/main.js"></script>
-</body>
-
-</html>
+</body></html>
